@@ -25,8 +25,14 @@
      <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="4,1,9">
       <item>
        <widget class="QLineEdit" name="cluster">
+        <property name="text">
+         <string>172.30.200.0/24</string>
+        </property>
         <property name="maxLength">
-         <number>1000</number>
+         <number>43</number>
+        </property>
+        <property name="placeholderText">
+         <string>e.g. 172.30.200.0/24</string>
         </property>
        </widget>
       </item>

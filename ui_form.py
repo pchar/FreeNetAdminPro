@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMainWindow, QPushButton, QSizePolicy,
     QSpacerItem, QStatusBar, QTableWidget, QTableWidgetItem,
     QTextEdit, QToolBar, QVBoxLayout, QWidget)
-import rc_resources
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -55,7 +54,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
         self.cluster = QLineEdit(self.centralwidget)
         self.cluster.setObjectName(u"cluster")
-        self.cluster.setMaxLength(1000)
+        self.cluster.setMaxLength(43)
 
         self.horizontalLayout_4.addWidget(self.cluster)
 
@@ -146,6 +145,8 @@ class Ui_MainWindow(object):
 #if QT_CONFIG(tooltip)
         self.actionStart.setToolTip(QCoreApplication.translate("MainWindow", u"Start/Stop Scanning", None))
 #endif // QT_CONFIG(tooltip)
+        self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200.0/24", None))
+        self.cluster.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 172.30.200.0/24", None))
         self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Hostname", None))
         ___qtablewidgetitem = self.tableWidget.horizontalHeaderItem(0)

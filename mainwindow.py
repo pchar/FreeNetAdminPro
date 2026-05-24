@@ -2,7 +2,8 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QRegularExpressionValidator
+from PySide6.QtCore import QRegularExpression
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 # Important:
@@ -31,6 +32,18 @@ class MainWindow(QMainWindow):
         self.ui.actionStart.setToolTip("Start Scanning")
 
         self.ui.actionStart.triggered.connect(self._on_triggered)
+
+        # CIDR subnet validator: accepts e.g. 172.30.200.0/24
+        cidr_re = QRegularExpression(
+            r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\."
+            r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\."
+            r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\."
+            r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\/"
+            r"(3[0-2]|[12]?\d)$"
+        )
+        self.ui.cluster.setValidator(
+            QRegularExpressionValidator(cidr_re, self.ui.cluster)
+        )
 
     def _on_triggered(self):
         if not self._scanning:
