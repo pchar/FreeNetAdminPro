@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMainWindow, QPushButton, QSizePolicy,
     QSpacerItem, QStatusBar, QTableWidget, QTableWidgetItem,
     QTextEdit, QToolBar, QVBoxLayout, QWidget)
-import rc_resources
+import resources_rc
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -69,10 +69,10 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4.addWidget(self.cluster)
 
-        self.pushButton = QPushButton(self.centralwidget)
-        self.pushButton.setObjectName(u"pushButton")
+        self.ApplypushButton = QPushButton(self.centralwidget)
+        self.ApplypushButton.setObjectName(u"ApplypushButton")
 
-        self.horizontalLayout_4.addWidget(self.pushButton)
+        self.horizontalLayout_4.addWidget(self.ApplypushButton)
 
         self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
@@ -153,7 +153,7 @@ class Ui_MainWindow(object):
         self.label_cluster.setText(QCoreApplication.translate("MainWindow", u"cluster", None))
         self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200.0/24", None))
         self.cluster.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 172.30.200.0/24", None))
-        self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
+        self.ApplypushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Hostname", None))
         ___qtablewidgetitem = self.tableWidget.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"Status", None))

@@ -2,8 +2,8 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtGui import QAction, QIcon, QRegularExpressionValidator
 from PySide6.QtCore import QRegularExpression
+from PySide6.QtGui import QAction, QIcon, QRegularExpressionValidator
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 # Important:
@@ -22,6 +22,18 @@ class MainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
 
+        # Set default cluster subnet
+        self.ui.cluster.setText("172.30.200.0/24")
+
+        # CIDR subnet validator: accepts e.g. 172.30.200.0/24
+        cidr_re = QRegularExpression(
+            r"^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
+            r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)/([0-9]|[12]\d|3[0-2])$"
+        )
+        self.ui.cluster.setValidator(
+            QRegularExpressionValidator(cidr_re, self.ui.cluster)
+        )
+
         # Icon setup — show play icon, scan not running
         self._scanning = False
         self._start_icon = QIcon(str(ICONS_DIR / "start.svg"))
@@ -32,18 +44,7 @@ class MainWindow(QMainWindow):
         self.ui.actionStart.setToolTip("Start Scanning")
 
         self.ui.actionStart.triggered.connect(self._on_triggered)
-
-        # CIDR subnet validator: accepts e.g. 172.30.200.0/24
-        cidr_re = QRegularExpression(
-            r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\."
-            r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\."
-            r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\."
-            r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\/"
-            r"(3[0-2]|[12]?\d)$"
-        )
-        self.ui.cluster.setValidator(
-            QRegularExpressionValidator(cidr_re, self.ui.cluster)
-        )
+        self.ui.ApplypushButton.clicked.connect(self._on_apply)
 
     def _on_triggered(self):
         if not self._scanning:
@@ -62,6 +63,13 @@ class MainWindow(QMainWindow):
 
     def _stop_scanning(self):
         self.ui.textEdit.append("[!] Scanning stopped.")
+
+    def _on_apply(self):
+        cluster = self.ui.cluster.text().strip()
+        if cluster:
+            self.ui.textEdit.append(f"[config] Cluster subnet applied: {cluster}")
+        else:
+            self.ui.textEdit.append("[config] Cluster subnet is empty.")
 
 
 if __name__ == "__main__":
