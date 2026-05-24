@@ -17,9 +17,10 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
-    QMainWindow, QSizePolicy, QStatusBar, QTableWidget,
-    QTableWidgetItem, QTextEdit, QToolBar, QVBoxLayout,
-    QWidget)
+    QLineEdit, QMainWindow, QPushButton, QSizePolicy,
+    QSpacerItem, QStatusBar, QTableWidget, QTableWidgetItem,
+    QTextEdit, QToolBar, QVBoxLayout, QWidget)
+import rc_resources
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -40,8 +41,48 @@ class Ui_MainWindow(object):
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout = QVBoxLayout(self.centralwidget)
         self.verticalLayout.setObjectName(u"verticalLayout")
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+
+        self.verticalLayout.addLayout(self.horizontalLayout_2)
+
+        self.horizontalLayout_3 = QHBoxLayout()
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+
+        self.verticalLayout.addLayout(self.horizontalLayout_3)
+
+        self.horizontalLayout_4 = QHBoxLayout()
+        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.cluster = QLineEdit(self.centralwidget)
+        self.cluster.setObjectName(u"cluster")
+        self.cluster.setMaxLength(1000)
+
+        self.horizontalLayout_4.addWidget(self.cluster)
+
+        self.pushButton = QPushButton(self.centralwidget)
+        self.pushButton.setObjectName(u"pushButton")
+
+        self.horizontalLayout_4.addWidget(self.pushButton)
+
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_4.addItem(self.horizontalSpacer)
+
+        self.horizontalLayout_4.setStretch(0, 4)
+        self.horizontalLayout_4.setStretch(1, 1)
+        self.horizontalLayout_4.setStretch(2, 9)
+
+        self.verticalLayout.addLayout(self.horizontalLayout_4)
+
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.verticalLayout_2 = QVBoxLayout()
+        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.label = QLabel(self.centralwidget)
+        self.label.setObjectName(u"label")
+
+        self.verticalLayout_2.addWidget(self.label)
+
         self.tableWidget = QTableWidget(self.centralwidget)
         if (self.tableWidget.columnCount() < 7):
             self.tableWidget.setColumnCount(7)
@@ -61,25 +102,17 @@ class Ui_MainWindow(object):
         self.tableWidget.setHorizontalHeaderItem(6, __qtablewidgetitem6)
         self.tableWidget.setObjectName(u"tableWidget")
 
-        self.horizontalLayout.addWidget(self.tableWidget)
-
-        self.verticalLayout_2 = QVBoxLayout()
-        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.label = QLabel(self.centralwidget)
-        self.label.setObjectName(u"label")
-
-        self.verticalLayout_2.addWidget(self.label)
+        self.verticalLayout_2.addWidget(self.tableWidget)
 
         self.HostNameDetails = QTextEdit(self.centralwidget)
         self.HostNameDetails.setObjectName(u"HostNameDetails")
 
         self.verticalLayout_2.addWidget(self.HostNameDetails)
 
-        self.verticalLayout_2.setStretch(1, 1)
+        self.verticalLayout_2.setStretch(2, 1)
 
         self.horizontalLayout.addLayout(self.verticalLayout_2)
 
-        self.horizontalLayout.setStretch(0, 3)
 
         self.verticalLayout.addLayout(self.horizontalLayout)
 
@@ -89,8 +122,8 @@ class Ui_MainWindow(object):
 
         self.verticalLayout.addWidget(self.textEdit)
 
-        self.verticalLayout.setStretch(0, 5)
-        self.verticalLayout.setStretch(1, 1)
+        self.verticalLayout.setStretch(3, 5)
+        self.verticalLayout.setStretch(4, 1)
         MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
@@ -113,6 +146,8 @@ class Ui_MainWindow(object):
 #if QT_CONFIG(tooltip)
         self.actionStart.setToolTip(QCoreApplication.translate("MainWindow", u"Start/Stop Scanning", None))
 #endif // QT_CONFIG(tooltip)
+        self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
+        self.label.setText(QCoreApplication.translate("MainWindow", u"Hostname", None))
         ___qtablewidgetitem = self.tableWidget.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"Status", None))
         ___qtablewidgetitem1 = self.tableWidget.horizontalHeaderItem(1)
@@ -127,7 +162,6 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem5.setText(QCoreApplication.translate("MainWindow", u"MAC Addr", None))
         ___qtablewidgetitem6 = self.tableWidget.horizontalHeaderItem(6)
         ___qtablewidgetitem6.setText(QCoreApplication.translate("MainWindow", u"NIC Vendor", None))
-        self.label.setText(QCoreApplication.translate("MainWindow", u"Hostname", None))
         self.toolBar.setWindowTitle(QCoreApplication.translate("MainWindow", u"toolBar", None))
     # retranslateUi
 
