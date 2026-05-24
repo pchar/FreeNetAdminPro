@@ -16,18 +16,22 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QMainWindow,
-    QSizePolicy, QStatusBar, QTableWidget, QTableWidgetItem,
-    QTextEdit, QToolBar, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
+    QMainWindow, QSizePolicy, QStatusBar, QTableWidget,
+    QTableWidgetItem, QTextEdit, QToolBar, QVBoxLayout,
+    QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
         MainWindow.resize(800, 600)
-        self.actiontest = QAction(MainWindow)
-        self.actiontest.setObjectName(u"actiontest")
-        self.actiontest.setMenuRole(QAction.MenuRole.NoRole)
+        self.actionStart = QAction(MainWindow)
+        self.actionStart.setObjectName(u"actionStart")
+        self.actionStart.setCheckable(True)
+        self.actionStart.setChecked(True)
+        self.actionStart.setEnabled(True)
+        self.actionStart.setMenuRole(QAction.MenuRole.NoRole)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout = QVBoxLayout(self.centralwidget)
@@ -57,16 +61,17 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_2 = QVBoxLayout()
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.textEdit_3 = QTextEdit(self.centralwidget)
-        self.textEdit_3.setObjectName(u"textEdit_3")
+        self.label = QLabel(self.centralwidget)
+        self.label.setObjectName(u"label")
 
-        self.verticalLayout_2.addWidget(self.textEdit_3)
+        self.verticalLayout_2.addWidget(self.label)
 
-        self.textEdit_2 = QTextEdit(self.centralwidget)
-        self.textEdit_2.setObjectName(u"textEdit_2")
+        self.HostNameDetails = QTextEdit(self.centralwidget)
+        self.HostNameDetails.setObjectName(u"HostNameDetails")
 
-        self.verticalLayout_2.addWidget(self.textEdit_2)
+        self.verticalLayout_2.addWidget(self.HostNameDetails)
 
+        self.verticalLayout_2.setStretch(1, 1)
 
         self.horizontalLayout.addLayout(self.verticalLayout_2)
 
@@ -90,7 +95,7 @@ class Ui_MainWindow(object):
         self.toolBar.setObjectName(u"toolBar")
         MainWindow.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolBar)
 
-        self.toolBar.addAction(self.actiontest)
+        self.toolBar.addAction(self.actionStart)
 
         self.retranslateUi(MainWindow)
 
@@ -99,7 +104,11 @@ class Ui_MainWindow(object):
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"MainWindow", None))
-        self.actiontest.setText(QCoreApplication.translate("MainWindow", u"test", None))
+        self.actionStart.setText(QCoreApplication.translate("MainWindow", u"Start Stop", None))
+        self.actionStart.setIconText(QCoreApplication.translate("MainWindow", u"Start Stop", None))
+#if QT_CONFIG(tooltip)
+        self.actionStart.setToolTip(QCoreApplication.translate("MainWindow", u"Start Stop Scanning", None))
+#endif // QT_CONFIG(tooltip)
         ___qtablewidgetitem = self.tableWidget.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"Status", None))
         ___qtablewidgetitem1 = self.tableWidget.horizontalHeaderItem(1)
@@ -114,6 +123,7 @@ class Ui_MainWindow(object):
         ___qtablewidgetitem5.setText(QCoreApplication.translate("MainWindow", u"MAC Addr", None))
         ___qtablewidgetitem6 = self.tableWidget.horizontalHeaderItem(6)
         ___qtablewidgetitem6.setText(QCoreApplication.translate("MainWindow", u"NIC Vendor", None))
+        self.label.setText(QCoreApplication.translate("MainWindow", u"Hostname", None))
         self.toolBar.setWindowTitle(QCoreApplication.translate("MainWindow", u"toolBar", None))
     # retranslateUi
 

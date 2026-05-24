@@ -57,12 +57,16 @@
        </widget>
       </item>
       <item>
-       <layout class="QVBoxLayout" name="verticalLayout_2">
+       <layout class="QVBoxLayout" name="verticalLayout_2" stretch="0,1">
         <item>
-         <widget class="QTextEdit" name="textEdit_3"/>
+         <widget class="QLabel" name="label">
+          <property name="text">
+           <string>Hostname</string>
+          </property>
+         </widget>
         </item>
         <item>
-         <widget class="QTextEdit" name="textEdit_2"/>
+         <widget class="QTextEdit" name="HostNameDetails"/>
         </item>
        </layout>
       </item>
@@ -88,11 +92,26 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="actiontest"/>
+   <addaction name="actionStart"/>
   </widget>
-  <action name="actiontest">
+  <action name="actionStart">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
    <property name="text">
-    <string>test</string>
+    <string>Start Stop</string>
+   </property>
+   <property name="iconText">
+    <string>Start Stop</string>
+   </property>
+   <property name="toolTip">
+    <string>Start Stop Scanning</string>
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::NoRole</enum>
