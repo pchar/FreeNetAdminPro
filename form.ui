@@ -107,11 +107,17 @@
    <property name="text">
     <string>Start Stop</string>
    </property>
+   <property name="icon">
+    <iconset resource="resources.qrc">
+     <normaloff>:/icons/start.svg</normaloff>
+     <normalon>:/icons/stop.svg</normalon>
+    </iconset>
+   </property>
    <property name="iconText">
     <string>Start Stop</string>
    </property>
    <property name="toolTip">
-    <string>Start Stop Scanning</string>
+    <string>Start/Stop Scanning</string>
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::NoRole</enum>
