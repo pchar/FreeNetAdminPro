@@ -60,7 +60,12 @@ class Ui_MainWindow(object):
 
         self.cluster = QLineEdit(self.centralwidget)
         self.cluster.setObjectName(u"cluster")
-        self.cluster.setMaxLength(10)
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.cluster.sizePolicy().hasHeightForWidth())
+        self.cluster.setSizePolicy(sizePolicy)
+        self.cluster.setProperty(u"fixedWidth", 190)
 
         self.horizontalLayout_4.addWidget(self.cluster)
 
@@ -146,7 +151,7 @@ class Ui_MainWindow(object):
         self.actionStart.setToolTip(QCoreApplication.translate("MainWindow", u"Start/Stop Scanning", None))
 #endif // QT_CONFIG(tooltip)
         self.label_cluster.setText(QCoreApplication.translate("MainWindow", u"cluster", None))
-        self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200", None))
+        self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200.0/24", None))
         self.cluster.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 172.30.200.0/24", None))
         self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Hostname", None))

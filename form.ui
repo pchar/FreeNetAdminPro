@@ -32,11 +32,20 @@
       </item>
       <item>
        <widget class="QLineEdit" name="cluster">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
         <property name="text">
-         <string>172.30.200</string>
+         <string>172.30.200.0/24</string>
         </property>
         <property name="placeholderText">
          <string>e.g. 172.30.200.0/24</string>
+        </property>
+        <property name="fixedWidth" stdset="0">
+         <number>190</number>
         </property>
        </widget>
       </item>
