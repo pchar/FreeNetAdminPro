@@ -2,4 +2,4 @@
 name = "freeNetAdminPro"
 
 [tool.pyside6-project]
-files = ["mainwindow.py", "form.ui"]
+files = ["mainwindow.py", "form.ui", "resources.qrc"]
