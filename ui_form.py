@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
     QLineEdit, QMainWindow, QPushButton, QSizePolicy,
     QSpacerItem, QStatusBar, QTableWidget, QTableWidgetItem,
     QTextEdit, QToolBar, QVBoxLayout, QWidget)
+import rc_resources
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -52,9 +53,14 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4 = QHBoxLayout()
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.label_cluster = QLabel(self.centralwidget)
+        self.label_cluster.setObjectName(u"label_cluster")
+
+        self.horizontalLayout_4.addWidget(self.label_cluster)
+
         self.cluster = QLineEdit(self.centralwidget)
         self.cluster.setObjectName(u"cluster")
-        self.cluster.setMaxLength(43)
+        self.cluster.setMaxLength(10)
 
         self.horizontalLayout_4.addWidget(self.cluster)
 
@@ -67,9 +73,9 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4.addItem(self.horizontalSpacer)
 
-        self.horizontalLayout_4.setStretch(0, 4)
-        self.horizontalLayout_4.setStretch(1, 1)
-        self.horizontalLayout_4.setStretch(2, 9)
+        self.horizontalLayout_4.setStretch(1, 4)
+        self.horizontalLayout_4.setStretch(2, 1)
+        self.horizontalLayout_4.setStretch(3, 9)
 
         self.verticalLayout.addLayout(self.horizontalLayout_4)
 
@@ -103,12 +109,6 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_2.addWidget(self.tableWidget)
 
-        self.HostNameDetails = QTextEdit(self.centralwidget)
-        self.HostNameDetails.setObjectName(u"HostNameDetails")
-
-        self.verticalLayout_2.addWidget(self.HostNameDetails)
-
-        self.verticalLayout_2.setStretch(2, 1)
 
         self.horizontalLayout.addLayout(self.verticalLayout_2)
 
@@ -145,7 +145,8 @@ class Ui_MainWindow(object):
 #if QT_CONFIG(tooltip)
         self.actionStart.setToolTip(QCoreApplication.translate("MainWindow", u"Start/Stop Scanning", None))
 #endif // QT_CONFIG(tooltip)
-        self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200.0/24", None))
+        self.label_cluster.setText(QCoreApplication.translate("MainWindow", u"cluster", None))
+        self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200", None))
         self.cluster.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 172.30.200.0/24", None))
         self.pushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Hostname", None))
