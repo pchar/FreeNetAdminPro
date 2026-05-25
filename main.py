@@ -5,6 +5,7 @@ Wires the Qt UI to the async MCP client:
   - pushButton_mcp toggles connection using the URL from lineEdit_mcp
   - icon toggles: green connected / red not_connected
   - all MCP calls logged to textEdit
+  - scan_network called via worker thread, results streamed back via signals
 """
 
 import sys
@@ -14,7 +15,7 @@ import json
 from datetime import datetime
 
 from typing import Optional
-from PySide6.QtWidgets import QMainWindow, QApplication, QTableWidgetItem, QProgressDialog
+from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem
 from PySide6.QtCore import QObject, Signal, QThread, Slot, Qt
 from PySide6.QtGui import QPixmap, QIcon
 
@@ -69,7 +70,8 @@ class MCPWorker(QObject):
 
     @Slot()
     def scan_network(self):
-        self._call("scan_network", {"subnet": "172.30.200.0/24", "resolve_names": True})
+        """Scan the configured cluster subnet."""
+        self._call("scan_network", {"subnet": "", "resolve_names": True})
 
     @Slot()
     def get_scanner_status(self):
@@ -117,6 +119,7 @@ class MCPWorker(QObject):
 
     @Slot()
     def discover_network(self):
+        """Scan the cluster subnet (alias for scan_network)."""
         self._call("scan_network", {
             "subnet": "",
             "resolve_names": True
@@ -173,7 +176,7 @@ class MCPWorker(QObject):
             self.status_signal.emit(False, f"{method_name}: {err}")
 
         # Always emit the parsed result so the main thread can display it
-        result["method_name"] = method_name  # tag so _on_worker_result knows the method
+        result["method_name"] = method_name
         self.result_signal.emit(result)
 
 
@@ -188,7 +191,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         super().__init__()
         self.setupUi(self)
 
-        # ── Reconnect UI elements we need ───────────────────────────────
+        # ── Wire UI controls ────────────────────────────────────────────
         self.pushButton_mcp.clicked.connect(self._on_mcp_button)
         self.pushButton_mcp.setCheckable(True)
         self.pushButton_mcp.setChecked(False)
@@ -196,25 +199,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_discover.clicked.connect(self._on_discover_button)
         self.pushButton_discover.setEnabled(False)  # disabled until connected
 
-        # Initial icon: not connected
-        self._set_status_icon(False)
-        self._append_log("[System] FreeNetAdminPro started")
-        self._append_log("[System] Click 'connect' on the MCP button to start")
+        # ── Scan-in-progress state ──────────────────────────────────────
+        self._is_scanning = False
 
         # ── Worker thread + background worker ───────────────────────────
         self._worker_thread: Optional[QThread] = None
         self._worker: Optional[MCPWorker] = None
 
-        self._append_log("[System] Ready")
+        self._set_status_icon(False)
+        self._append_log("[System] FreeNetAdminPro started")
+        self._append_log("[System] Click 'connect' on the MCP button to start")
 
     def _ensure_thread(self):
         """Create or return the worker thread.
-        
+
         QThread cannot be reused after finish(), so we create a fresh one
         each time the user connects (after a prior disconnect).
         """
         if self._worker_thread is None or not self._worker_thread.isRunning():
-            # If thread finished, clean it up and create a new one
             if self._worker_thread is not None:
                 self._worker_thread.quit()
                 self._worker_thread.wait()
@@ -237,7 +239,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.pushButton_mcp.setText("Disconnect")
             self._append_log(f"[UI] Connect requested → {url}")
 
-            # Create worker with this URL (destroy previous if any)
+            # Destroy previous worker and create a new one
             self._cleanup_worker()
             thread = self._ensure_thread()
             self._worker = MCPWorker(url)
@@ -260,10 +262,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self._worker.disconnect()
             else:
                 self._append_log("[UI] ✗ Not connected")
-                self.pushButton_mcp.setChecked(True)  # re-check if nothing to do
+                self.pushButton_mcp.setChecked(True)
                 self.pushButton_mcp.setText("Disconnect")
             self._cleanup_worker()
-            # Worker is gone — quit the thread
             if self._worker_thread is not None and self._worker_thread.isRunning():
                 self._worker_thread.quit()
                 self._worker_thread.wait()
@@ -274,119 +275,116 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._set_status_icon(connected)
         self.pushButton_mcp.setChecked(connected)
         self.pushButton_mcp.setText("Disconnect" if connected else "Connect")
-        self.pushButton_discover.setEnabled(connected)  # enable/disable discover button
+        self.pushButton_discover.setEnabled(connected)
         self.statusbar.showMessage(message, 5000)
 
     @Slot(dict)
     def _on_worker_result(self, result: dict):
-        """Handle MCP tool call results and populate UI."""
-        # Hide progress bar if visible
-        if hasattr(self, "_progress_dialog") and self._progress_dialog is not None:
-            self._progress_dialog.close()
-            self._progress_dialog = None
+        """Handle MCP tool call results and populate UI.
 
+        This runs on the main thread (queued signal). Table population
+        is fast for typical datasets (<500 rows) so we do it here.
+        """
         method_name = result.get("method_name", "")
-        self._append_log(f"[UI] Received result: {method_name} -> {list(result.keys()) if isinstance(result, dict) else type(result)}")
+        self._append_log(f"[UI] Received result: {method_name} -> "
+                         f"{list(result.keys()) if isinstance(result, dict) else type(result)}")
 
         if method_name == "scan_network":
-            self._populate_table(result)
-            # Re-enable discover button after operation completes
+            # Clear scanning flag and re-enable the discover button
+            self._is_scanning = False
             self.pushButton_discover.setEnabled(True)
-
-    def _on_progress_canceled(self):
-        """Handle progress dialog cancel — stop scan and clean up."""
-        self._append_log("[UI] Scan canceled by user")
-        if self._progress_dialog:
-            self._progress_dialog.close()
-        self.pushButton_discover.setEnabled(True)
+            self._populate_table(result)
 
     def _on_discover_button(self):
-        """Handle discover button click."""
-        if self._worker and self.pushButton_discover.isEnabled():
-            # Show progress bar
-            self._progress_dialog = QProgressDialog(
-                "Scanning network...", "Cancel", 0, 100, self
-            )
-            self._progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-            self._progress_dialog.setMinimumDuration(0)  # show immediately
-            self._progress_dialog.canceled.connect(self._on_progress_canceled)
-            self._progress_dialog.show()
-            self.pushButton_discover.setEnabled(False)  # prevent double-click
-            self._worker.discover_network()
+        """Handle discover button click — starts a non-blocking scan."""
+        if not self._worker or not self.pushButton_discover.isEnabled():
+            return
+
+        # Mark scanning, disable button, show status in statusbar
+        self._is_scanning = True
+        self.pushButton_discover.setEnabled(False)
+        self.statusbar.showMessage("Scanning network...", 0)
+        self._append_log("[UI] Scan started — results will appear when complete")
+        self._worker.discover_network()
 
     def _populate_table(self, result: dict):
-        """Populate tableWidgetHost from scan_network result dict."""
+        """Populate tableWidgetHost from scan_network result dict.
+
+        Optimization: disable widget updates during batch insert to avoid
+        repainting for every row, then re-enable for a single paint.
+        """
         if not isinstance(result, dict):
             self._append_log(f"[UI] ERROR: Expected dict, got {type(result)}")
             self._append_log(f"[UI] Raw result: {result}")
+            self.statusbar.showMessage("Scan failed — invalid response", 5000)
             return
 
         devices = result.get("devices")
         if devices is None:
-            # Try to get from "result" key as fallback
             devices = result.get("result", {}).get("devices", []) if isinstance(result.get("result"), dict) else []
             if not devices:
                 self._append_log(f"[UI] No 'devices' key found. Result keys: {list(result.keys())}")
                 self._append_log(f"[UI] Full result: {json.dumps(result, indent=2)[:500]}")
+                self.statusbar.showMessage("Scan found no devices", 5000)
                 return
 
-        self._append_log(f"[UI] Parsing scan result: {len(devices)} devices")
+        total = len(devices)
+        self._append_log(f"[UI] Parsing scan result: {total} devices")
 
-        # Clear existing rows
+        # Batch update: freeze painting, insert all rows, then paint once
+        self.tableWidgetHost.setUpdatesEnabled(False)
         self.tableWidgetHost.setRowCount(0)
 
-        # Prepare icons — reuse from resources
-        icon_connected = QPixmap(":/icons/start.svg")   # green (device found)
-        icon_disconnected = QPixmap(":/icons/stop.svg")  # red
+        # Preload icons once (avoid repeated QPixmap construction)
+        icon_up = QIcon(QPixmap(":/icons/start.svg"))
 
         for dev in devices:
             row = self.tableWidgetHost.rowCount()
             self.tableWidgetHost.insertRow(row)
 
             # ── Col 0: Status ──
-            # Assume device is up (ARP found it); set green status text
-            status_item = QTableWidgetItem("●")
-            status_item.setForeground(Qt.GlobalColor.darkGreen)
-            status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 0, status_item)
+            item = QTableWidgetItem("●")
+            item.setForeground(Qt.GlobalColor.darkGreen)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(row, 0, item)
 
             # ── Col 1: icon ──
-            icon_item = QTableWidgetItem()
-            icon_item.setIcon(QIcon(icon_connected))
-            icon_item.setFlags(icon_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 1, icon_item)
+            item = QTableWidgetItem()
+            item.setIcon(icon_up)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(row, 1, item)
 
             # ── Col 2: name ──
             name = dev.get("hostname") or dev.get("mac") or "Unknown"
-            name_item = QTableWidgetItem(name)
-            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 2, name_item)
+            item = QTableWidgetItem(name)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(row, 2, item)
 
-            # ── Col 3: IPv4 Addr ──
-            ip = dev.get("ip", "N/A")
-            ip_item = QTableWidgetItem(ip)
-            ip_item.setFlags(ip_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 3, ip_item)
+            # ── Col 3: IPv4 ──
+            item = QTableWidgetItem(str(dev.get("ip", "N/A")))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(row, 3, item)
 
             # ── Col 4: Ping ──
-            ping_item = QTableWidgetItem("N/A")
-            ping_item.setForeground(Qt.GlobalColor.gray)
-            ping_item.setFlags(ping_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 4, ping_item)
+            item = QTableWidgetItem("N/A")
+            item.setForeground(Qt.GlobalColor.gray)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(row, 4, item)
 
-            # ── Col 5: MAC Addr ──
-            mac = dev.get("mac", "N/A")
-            mac_item = QTableWidgetItem(mac)
-            mac_item.setFlags(mac_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 5, mac_item)
+            # ── Col 5: MAC ──
+            item = QTableWidgetItem(str(dev.get("mac", "N/A")))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(row, 5, item)
 
-            # ── Col 6: NIC Vendor ──
-            vendor = dev.get("vendor", "Unknown")
-            vendor_item = QTableWidgetItem(vendor)
-            vendor_item.setFlags(vendor_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 6, vendor_item)
+            # ── Col 6: Vendor ──
+            item = QTableWidgetItem(str(dev.get("vendor", "Unknown")))
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(row, 6, item)
 
-        total = len(devices)
+        # Re-enable painting — single repaint
+        self.tableWidgetHost.setUpdatesEnabled(True)
+        self.tableWidgetHost.repaint()
+
         self._append_log(f"[UI] Populated table with {total} devices")
         self.statusbar.showMessage(f"Discovered {total} devices", 5000)
 
@@ -411,25 +409,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """Clean up on exit — stop thread and worker gracefully."""
         self._append_log("[UI] Shutting down...")
 
-        # 1. Disconnect worker signals first (stop signal routing)
+        # 1. Disconnect worker signals first
         if self._worker is not None:
             self._append_log("[UI] Disconnecting worker...")
             self._worker.disconnect()
-            # Stop any in-flight async operation
-            if hasattr(self._worker, 'stop'):
-                self._worker.stop()
 
-        # 2. Disconnect UI slots from worker signals
+        # 2. Quit the thread and wait (3s timeout)
         if self._worker_thread is not None:
             self._worker_thread.quit()
-            # Wait with timeout — don't block forever if async ops hang
             if not self._worker_thread.wait(3000):
-                self._append_log("[UI] WARNING: Thread did not quit in time, force stopping")
+                self._append_log("[UI] WARNING: Thread did not quit in time")
 
-        # 3. Delete worker (now safe — thread is stopped, signals are disconnected)
+        # 3. Delete worker (thread is stopped)
         self._cleanup_worker()
 
-        # 4. Clean up thread object
+        # 4. Delete thread
         if self._worker_thread is not None:
             self._worker_thread.deleteLater()
             self._worker_thread = None
@@ -444,7 +438,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")  # clean cross-platform look
+    app.setStyle("Fusion")
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
