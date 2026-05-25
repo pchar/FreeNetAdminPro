@@ -197,8 +197,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self._append_log("[UI] ✗ MCP URL is empty")
                 self.pushButton_mcp.setChecked(False)
                 self._set_status_icon(False)
+                self.pushButton_mcp.setText("Connect")
                 return
 
+            self.pushButton_mcp.setText("Disconnect")
             self._append_log(f"[UI] Connect requested → {url}")
 
             # Create worker with this URL (destroy previous if any)
@@ -215,18 +217,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._worker.connect()
         else:
             # → Disconnect
+            self.pushButton_mcp.setText("Connect")
             self._append_log("[UI] Disconnect requested")
             if self._worker:
                 self._worker.disconnect()
             else:
                 self._append_log("[UI] ✗ Not connected")
                 self.pushButton_mcp.setChecked(True)  # re-check if nothing to do
+                self.pushButton_mcp.setText("Disconnect")
             self._cleanup_worker()
 
     @Slot(bool, str)
     def _on_worker_status(self, connected: bool, message: str):
         """Handle status updates from the worker thread."""
         self._set_status_icon(connected)
+        self.pushButton_mcp.setText("Disconnect" if connected else "Connect")
         self.statusbar.showMessage(message, 5000)
 
     def _set_status_icon(self, connected: bool):
