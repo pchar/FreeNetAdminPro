@@ -182,12 +182,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._append_log("[System] Click 'connect' on the MCP button to start")
 
         # ── Worker thread + background worker ───────────────────────────
-        self._worker_thread = QThread()
-        self._worker = None  # created lazily on first connect
-
-        self._worker_thread.start()
+        self._worker_thread: Optional[QThread] = None
+        self._worker: Optional[MCPWorker] = None
 
         self._append_log("[System] Ready")
+
+    def _ensure_thread(self):
+        """Create or return the worker thread.
+        
+        QThread cannot be reused after finish(), so we create a fresh one
+        each time the user connects (after a prior disconnect).
+        """
+        if self._worker_thread is None or not self._worker_thread.isRunning():
+            # If thread finished, clean it up and create a new one
+            if self._worker_thread is not None:
+                self._worker_thread.quit()
+                self._worker_thread.wait()
+                self._worker_thread.deleteLater()
+            self._worker_thread = QThread()
+        return self._worker_thread
 
     def _on_mcp_button(self):
         """Toggle connect / disconnect when pushButton_mcp is clicked."""
@@ -206,15 +219,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             # Create worker with this URL (destroy previous if any)
             self._cleanup_worker()
+            thread = self._ensure_thread()
             self._worker = MCPWorker(url)
-            self._worker.moveToThread(self._worker_thread)
-            self._worker.setParent(self._worker_thread)
+            self._worker.moveToThread(thread)
 
             # Wire signals
             self._worker.log_signal.connect(self._append_log)
             self._worker.status_signal.connect(self._on_worker_status)
 
-            # Fire connect on the worker
+            # Start the thread and fire connect
+            assert thread is not None
+            thread.start()
             self._worker.connect()
         else:
             # → Disconnect
@@ -227,6 +242,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.pushButton_mcp.setChecked(True)  # re-check if nothing to do
                 self.pushButton_mcp.setText("Disconnect")
             self._cleanup_worker()
+            # Worker is gone — quit the thread
+            if self._worker_thread is not None and self._worker_thread.isRunning():
+                self._worker_thread.quit()
+                self._worker_thread.wait()
 
     @Slot(bool, str)
     def _on_worker_status(self, connected: bool, message: str):
@@ -249,15 +268,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def _cleanup_worker(self):
         """Destroy the current worker and reset reference."""
-        if self._worker:
+        if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None
 
     def closeEvent(self, event):
-        """Clean up on exit."""
+        """Clean up on exit — quit thread BEFORE deleting worker."""
+        # 1. Disconnect worker if connected (stops async work first)
+        if self._worker is not None:
+            self._worker.disconnect()
+        # 2. Quit the thread's event loop so pending signals are flushed
+        if self._worker_thread is not None and self._worker_thread.isRunning():
+            self._worker_thread.quit()
+            self._worker_thread.wait()
+        # 3. Now delete the worker (no more signals flying)
         self._cleanup_worker()
-        self._worker_thread.quit()
-        self._worker_thread.wait()
+        # 4. Clean up thread object
+        if self._worker_thread is not None:
+            self._worker_thread.deleteLater()
+            self._worker_thread = None
         event.accept()
 
 
