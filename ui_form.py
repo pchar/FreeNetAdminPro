@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QApplication, QGridLayout, QHBoxLayout, QHeaderVi
     QSizePolicy, QSpacerItem, QStatusBar, QTableWidget,
     QTableWidgetItem, QTextEdit, QToolBar, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget)
-import resources_rc
+import rc_resources
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -199,7 +199,7 @@ class Ui_MainWindow(object):
         self.ApplypushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
         self.label_mcp.setText(QCoreApplication.translate("MainWindow", u"MCP", None))
         self.label_mcp_status.setText("")
-        self.lineEdit_mcp.setText(QCoreApplication.translate("MainWindow", u"http://localhost:8000/v1", None))
+        self.lineEdit_mcp.setText(QCoreApplication.translate("MainWindow", u"http://localhost:8009", None))
         self.pushButton_mcp.setText(QCoreApplication.translate("MainWindow", u"connect", None))
         self.labelClusters.setText(QCoreApplication.translate("MainWindow", u"Clusters", None))
         ___qtablewidgetitem = self.tableWidgetHost.horizontalHeaderItem(0)
