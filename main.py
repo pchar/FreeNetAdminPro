@@ -12,6 +12,7 @@ import sys
 import asyncio
 import logging
 import json
+import ipaddress
 from datetime import datetime
 
 from typing import Optional
@@ -21,6 +22,60 @@ from PySide6.QtGui import QPixmap, QIcon
 
 from ui_form import Ui_MainWindow
 from mcp_handler import MCPClient
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Custom table items with semantic sorting
+# ────────────────────────────────────────────────────────────────────────────
+
+class IPTableWidgetItem(QTableWidgetItem):
+    """TableWidgetItem that sorts IPv4 addresses numerically, not lexicographically.
+
+    "10.0.0.1" < "192.168.1.1" (correct numeric comparison)
+    vs string compare: "10..." < "192..." (wrong — but actually same here)
+    Better example: "9.0.0.1" < "10.0.0.1" (numeric) vs "10..." < "9..." (string)
+    """
+
+    def __init__(self, text: str = ""):
+        super().__init__(text)
+        self.setData(Qt.UserRole, self._ip_to_num(text))
+
+    @staticmethod
+    def _ip_to_num(ip: str) -> int:
+        try:
+            return int(ipaddress.ip_address(ip))
+        except (ValueError, TypeError, ipaddress.AddressValueError):
+            return -1  # non-IP addresses sort first (before valid ones)
+
+    def __lt__(self, other):
+        self_num = self.data(Qt.UserRole)
+        other_num = other.data(Qt.UserRole)
+        if self_num != -1 and other_num != -1:
+            # Both are valid IPs → numeric comparison
+            return self_num < other_num
+        if self_num == -1 and other_num == -1:
+            # Both are non-IPs (e.g. "N/A") → string comparison
+            return super().__lt__(other)
+        # Valid IPs always sort before non-IPs
+        return self_num != -1
+
+
+class MacTableWidgetItem(QTableWidgetItem):
+    """TableWidgetItem that sorts MAC addresses consistently."""
+
+    @staticmethod
+    def _mac_to_key(mac: str) -> str:
+        try:
+            return mac.replace(":", "").replace("-", "").upper()
+        except Exception:
+            return str(mac)
+
+    def __init__(self, text: str = ""):
+        super().__init__(text)
+        self.setData(Qt.UserRole, self._mac_to_key(text))
+
+    def __lt__(self, other):
+        return self.data(Qt.UserRole) < other.data(Qt.UserRole)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -199,6 +254,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_discover.clicked.connect(self._on_discover_button)
         self.pushButton_discover.setEnabled(False)  # disabled until connected
 
+        # ── Enable column sorting ───────────────────────────────────────
+        self.tableWidgetHost.setSortingEnabled(False)  # turn off during batch update
+        self.tableWidgetHost.horizontalHeader().setSortIndicator(0, Qt.AscendingOrder)
+        self.tableWidgetHost.horizontalHeader().setSortIndicatorShown(True)
+        self.tableWidgetHost.setSortingEnabled(True)
+
         # ── Scan-in-progress state ──────────────────────────────────────
         self._is_scanning = False
 
@@ -331,6 +392,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         total = len(devices)
         self._append_log(f"[UI] Parsing scan result: {total} devices")
 
+        # Disable sorting during batch insert — prevents re-sort after every row
+        self.tableWidgetHost.setSortingEnabled(False)
         # Batch update: freeze painting, insert all rows, then paint once
         self.tableWidgetHost.setUpdatesEnabled(False)
         self.tableWidgetHost.setRowCount(0)
@@ -360,8 +423,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 2, item)
 
-            # ── Col 3: IPv4 ──
-            item = QTableWidgetItem(str(dev.get("ip", "N/A")))
+            # ── Col 3: IPv4 — semantic numeric sort ──
+            item = IPTableWidgetItem(str(dev.get("ip", "N/A")))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 3, item)
 
@@ -381,7 +444,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 6, item)
 
-        # Re-enable painting — single repaint
+        # Re-enable sorting and painting — table is ready for user interaction
+        self.tableWidgetHost.setSortingEnabled(True)
         self.tableWidgetHost.setUpdatesEnabled(True)
         self.tableWidgetHost.repaint()
 

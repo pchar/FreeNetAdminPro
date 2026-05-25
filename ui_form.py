@@ -138,6 +138,8 @@ class Ui_MainWindow(object):
         __qtablewidgetitem6 = QTableWidgetItem()
         self.tableWidgetHost.setHorizontalHeaderItem(6, __qtablewidgetitem6)
         self.tableWidgetHost.setObjectName(u"tableWidgetHost")
+        self.tableWidgetHost.setSortingEnabled(True)
+        self.tableWidgetHost.verticalHeader().setProperty(u"showSortIndicator", True)
 
         self.verticalLayout_2.addWidget(self.tableWidgetHost)
 
