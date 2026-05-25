@@ -16,11 +16,12 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
-    QLineEdit, QMainWindow, QPushButton, QSizePolicy,
-    QSpacerItem, QStatusBar, QTableWidget, QTableWidgetItem,
-    QTextEdit, QToolBar, QVBoxLayout, QWidget)
-import resources_rc
+from PySide6.QtWidgets import (QApplication, QGridLayout, QHBoxLayout, QHeaderView,
+    QLabel, QLineEdit, QMainWindow, QPushButton,
+    QScrollBar, QSizePolicy, QSpacerItem, QSpinBox,
+    QStatusBar, QTableWidget, QTableWidgetItem, QTextEdit,
+    QToolBar, QVBoxLayout, QWidget)
+import rc_resources
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -39,18 +40,8 @@ class Ui_MainWindow(object):
         self.actionStart.setMenuRole(QAction.MenuRole.NoRole)
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
-        self.verticalLayout = QVBoxLayout(self.centralwidget)
-        self.verticalLayout.setObjectName(u"verticalLayout")
-        self.horizontalLayout_2 = QHBoxLayout()
-        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-
-        self.verticalLayout.addLayout(self.horizontalLayout_2)
-
-        self.horizontalLayout_3 = QHBoxLayout()
-        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
-
-        self.verticalLayout.addLayout(self.horizontalLayout_3)
-
+        self.gridLayout = QGridLayout(self.centralwidget)
+        self.gridLayout.setObjectName(u"gridLayout")
         self.horizontalLayout_4 = QHBoxLayout()
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
         self.label_cluster = QLabel(self.centralwidget)
@@ -82,7 +73,13 @@ class Ui_MainWindow(object):
         self.horizontalLayout_4.setStretch(2, 1)
         self.horizontalLayout_4.setStretch(3, 9)
 
-        self.verticalLayout.addLayout(self.horizontalLayout_4)
+        self.gridLayout.addLayout(self.horizontalLayout_4, 0, 0, 1, 1)
+
+        self.textEdit = QTextEdit(self.centralwidget)
+        self.textEdit.setObjectName(u"textEdit")
+        self.textEdit.setReadOnly(True)
+
+        self.gridLayout.addWidget(self.textEdit, 2, 0, 1, 1)
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
@@ -118,16 +115,29 @@ class Ui_MainWindow(object):
         self.horizontalLayout.addLayout(self.verticalLayout_2)
 
 
-        self.verticalLayout.addLayout(self.horizontalLayout)
+        self.gridLayout.addLayout(self.horizontalLayout, 1, 0, 1, 1)
 
-        self.textEdit = QTextEdit(self.centralwidget)
-        self.textEdit.setObjectName(u"textEdit")
-        self.textEdit.setReadOnly(True)
+        self.verticalLayout = QVBoxLayout()
+        self.verticalLayout.setObjectName(u"verticalLayout")
+        self.spinBox = QSpinBox(self.centralwidget)
+        self.spinBox.setObjectName(u"spinBox")
 
-        self.verticalLayout.addWidget(self.textEdit)
+        self.verticalLayout.addWidget(self.spinBox)
 
-        self.verticalLayout.setStretch(3, 5)
-        self.verticalLayout.setStretch(4, 1)
+        self.horizontalScrollBar = QScrollBar(self.centralwidget)
+        self.horizontalScrollBar.setObjectName(u"horizontalScrollBar")
+        self.horizontalScrollBar.setOrientation(Qt.Orientation.Horizontal)
+
+        self.verticalLayout.addWidget(self.horizontalScrollBar)
+
+
+        self.gridLayout.addLayout(self.verticalLayout, 1, 1, 1, 1)
+
+        self.verticalLayout_3 = QVBoxLayout()
+        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
+
+        self.gridLayout.addLayout(self.verticalLayout_3, 2, 1, 1, 1)
+
         MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
