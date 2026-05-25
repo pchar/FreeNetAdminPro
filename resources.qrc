@@ -4,5 +4,10 @@
         <file>icons/stop.svg</file>
         <file>icons/connected.svg</file>
         <file>icons/not_connected.svg</file>
+        <file>icons/linux.svg</file>
+        <file>icons/apple.svg</file>
+        <file>icons/windows.svg</file>
+        <file>icons/mobile.svg</file>
+        <file>icons/server.svg</file>
     </qresource>
 </RCC>

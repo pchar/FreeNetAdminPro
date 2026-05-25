@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">
+  <rect x="6" y="8" width="52" height="40" rx="3" fill="#0078D4" stroke="#005A9E" stroke-width="2"/>
+  <rect x="10" y="12" width="20" height="18" rx="1" fill="#00A4EF"/>
+  <rect x="34" y="12" width="20" height="18" rx="1" fill="#7FBA00"/>
+  <rect x="10" y="34" width="20" height="18" rx="1" fill="#FFB900"/>
+  <rect x="34" y="34" width="20" height="18" rx="1" fill="#F25022"/>
+  <rect x="20" y="48" width="24" height="2" fill="#005A9E"/>
+  <rect x="16" y="50" width="32" height="2" fill="#005A9E"/>
+  <text x="32" y="56" text-anchor="middle" font-size="8" fill="#0078D4" font-weight="bold">WIN</text>
+</svg>

@@ -79,6 +79,99 @@ class MacTableWidgetItem(QTableWidgetItem):
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# Device classification — infer device type from vendor + hostname
+# ────────────────────────────────────────────────────────────────────────────
+
+# Icon paths mapped to device type keys
+DEVICE_ICONS = {
+    "apple":     ":/icons/apple.svg",
+    "windows":   ":/icons/windows.svg",
+    "linux":     ":/icons/linux.svg",
+    "android":   ":/icons/mobile.svg",
+    "ios":       ":/icons/mobile.svg",
+    "server":    ":/icons/server.svg",
+    "network":   ":/icons/server.svg",  # router/switch → server icon
+    "unknown":   ":/icons/start.svg",   # default device icon
+}
+
+# Known manufacturers that imply Linux/server
+LINUX_VENDORS = [
+    "raspberry pi", "beagleboard", "rockchip", "allwinner", "nvidia",
+    "amazon", "google", "arm",
+    "microsemi", "altera", "xilinx", "intel corporation", "amd",
+    "super micro", "dell", "hpe", "hp inc", "lenovo", "ibm",
+    "netapp", "synology", "qnap", "asustor", "buffalo technology",
+    "ubiquiti", "cisco", "juniper networks", "arista networks",
+    "mikrotik", "fortinet", "palo alto", "checkpoint",
+    "citrix", "vmware", "proxmox",
+]
+
+# Known manufacturers that imply Apple/IOS/MacOS
+APPLE_VENDORS = [
+    "apple", "airpod", "airtag",
+]
+
+# Known hostname patterns
+WINDOWS_PATTERNS = ["win-", "win_", "desktop-", "desktop_"]
+SERVER_PATTERNS = ["srv", "server", "nas", "storage", "db-", "db_"]
+IOS_PATTERNS = ["iphone", "ipad", "ipod", "macbook", "imac", "mac mini"]
+
+
+def classify_device(vendor: str, hostname: str) -> str:
+    """Classify device type and return icon key.
+    
+    Uses vendor name and hostname to infer device type.
+    Returns one of: 'apple', 'windows', 'linux', 'android', 'ios',
+                    'server', 'network', 'unknown'
+    """
+    vendor_lower = (vendor or "").lower()
+    host_lower = (hostname or "").lower()
+
+    # 1. Check for Apple products (vendor-based, highest priority)
+    for kw in APPLE_VENDORS:
+        if kw in vendor_lower:
+            return "apple"
+
+    # 2. Check hostname for Apple devices
+    for kw in IOS_PATTERNS:
+        if kw in host_lower:
+            return "ios"
+
+    # 3. Check hostname for Windows devices
+    for kw in WINDOWS_PATTERNS:
+        if kw in host_lower:
+            return "windows"
+
+    # 4. Check hostname for Linux servers
+    for kw in SERVER_PATTERNS:
+        if kw in host_lower:
+            return "server"
+
+    # 5. Check vendor for known Linux/Server hardware
+    for kw in LINUX_VENDORS:
+        if kw in vendor_lower:
+            # Server manufacturers → server icon
+            if any(s in vendor_lower for s in ["dell", "hpe", "hp inc", "lenovo", "ibm", "super micro", "raspberry pi"]):
+                return "server"
+            # Network equipment
+            if any(n in vendor_lower for n in ["cisco", "juniper", "arista", "mikrotik", "ubiquiti", "fortinet"]):
+                return "network"
+            # Otherwise regular Linux device
+            return "linux"
+
+    # 6. Mobile devices often have vendor names like "Apple", "Samsung", etc.
+    #    Check mobile vendor patterns (fallback)
+    mobile_vendors = ["samsung", "huawei", "xiaomi", "oppo", "vivo", "oneplus", "nokia", "lg electronics"]
+    for kw in mobile_vendors:
+        if kw in vendor_lower:
+            # Could be Android phone or IoT device
+            return "android"
+
+    # 7. Default — assume generic network device
+    return "unknown"
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # Async worker — runs on a dedicated thread so the GUI never freezes
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -399,7 +492,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tableWidgetHost.setRowCount(0)
 
         # Preload icons once (avoid repeated QPixmap construction)
-        icon_up = QIcon(QPixmap(":/icons/start.svg"))
+        _icon_cache: dict[str, QIcon] = {}
 
         for dev in devices:
             row = self.tableWidgetHost.rowCount()
@@ -411,9 +504,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 0, item)
 
-            # ── Col 1: icon ──
+            # ── Col 1: device type icon ──
+            vendor = dev.get("vendor", "") or ""
+            hostname = dev.get("hostname") or ""
+            device_type = classify_device(vendor, hostname)
+            icon_path = DEVICE_ICONS.get(device_type, DEVICE_ICONS["unknown"])
+            if icon_path not in _icon_cache:
+                _icon_cache[icon_path] = QIcon(QPixmap(icon_path))
             item = QTableWidgetItem()
-            item.setIcon(icon_up)
+            item.setIcon(_icon_cache[icon_path])
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 1, item)
 
