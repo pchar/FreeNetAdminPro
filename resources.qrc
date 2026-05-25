@@ -2,5 +2,7 @@
     <qresource prefix="/">
         <file>icons/start.svg</file>
         <file>icons/stop.svg</file>
+        <file>icons/connected.svg</file>
+        <file>icons/not_connected.svg</file>
     </qresource>
 </RCC>

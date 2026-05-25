@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QApplication, QGridLayout, QHBoxLayout, QHeaderVi
     QSizePolicy, QSpacerItem, QStatusBar, QTableWidget,
     QTableWidgetItem, QTextEdit, QToolBar, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget)
-import rc_resources
+import resources_rc
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -69,9 +69,34 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4.addItem(self.horizontalSpacer)
 
-        self.horizontalLayout_4.setStretch(1, 4)
-        self.horizontalLayout_4.setStretch(2, 1)
-        self.horizontalLayout_4.setStretch(3, 9)
+        self.label_mcp = QLabel(self.centralwidget)
+        self.label_mcp.setObjectName(u"label_mcp")
+
+        self.horizontalLayout_4.addWidget(self.label_mcp)
+
+        self.label_mcp_status = QLabel(self.centralwidget)
+        self.label_mcp_status.setObjectName(u"label_mcp_status")
+        self.label_mcp_status.setMinimumSize(QSize(24, 24))
+        self.label_mcp_status.setPixmap(QPixmap(u":/icons/not_connected.svg"))
+        self.label_mcp_status.setScaledContents(True)
+
+        self.horizontalLayout_4.addWidget(self.label_mcp_status)
+
+        self.lineEdit_mcp = QLineEdit(self.centralwidget)
+        self.lineEdit_mcp.setObjectName(u"lineEdit_mcp")
+        sizePolicy.setHeightForWidth(self.lineEdit_mcp.sizePolicy().hasHeightForWidth())
+        self.lineEdit_mcp.setSizePolicy(sizePolicy)
+        self.lineEdit_mcp.setMinimumSize(QSize(160, 0))
+
+        self.horizontalLayout_4.addWidget(self.lineEdit_mcp)
+
+        self.pushButton_mcp = QPushButton(self.centralwidget)
+        self.pushButton_mcp.setObjectName(u"pushButton_mcp")
+        self.pushButton_mcp.setCheckable(True)
+
+        self.horizontalLayout_4.addWidget(self.pushButton_mcp)
+
+        self.horizontalLayout_4.setStretch(3, 1)
 
         self.gridLayout.addLayout(self.horizontalLayout_4, 0, 0, 1, 1)
 
@@ -172,6 +197,10 @@ class Ui_MainWindow(object):
         self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200.0/24", None))
         self.cluster.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 172.30.200.0/24", None))
         self.ApplypushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
+        self.label_mcp.setText(QCoreApplication.translate("MainWindow", u"MCP", None))
+        self.label_mcp_status.setText("")
+        self.lineEdit_mcp.setText(QCoreApplication.translate("MainWindow", u"http://localhost:8000/v1", None))
+        self.pushButton_mcp.setText(QCoreApplication.translate("MainWindow", u"connect", None))
         self.labelClusters.setText(QCoreApplication.translate("MainWindow", u"Clusters", None))
         ___qtablewidgetitem = self.tableWidgetHost.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"Status", None))
