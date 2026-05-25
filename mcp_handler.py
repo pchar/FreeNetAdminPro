@@ -17,12 +17,55 @@ import aiohttp
 from typing import Optional, Dict, Any, List
 
 
-def _parse_sse(text: str) -> List[Dict[str, Any]]:
-    """Parse SSE (Server-Sent Events) response into list of JSON payloads."""
+def _parse_response(text: str) -> List[Dict[str, Any]]:
+    """Parse response from MCP server into list of JSON payloads.
+
+    Handles both SSE (Server-Sent Events) and plain JSON responses.
+    Tries SSE first, falls back to plain JSON if no 'data:' prefix found.
+    Returns the full parsed response as a list (1 element for single message).
+    """
     if not text or not text.strip():
         return []
-    data_parts = re.findall(r'data:\s*(\{.*?\})\s', text, re.DOTALL)
-    return [json.loads(d) for d in data_parts if d.strip().startswith('{')]
+    results = []
+    text_stripped = text.strip()
+    
+    # Try SSE format first (lines starting with 'data:')
+    if 'data:' in text:
+        parts = text.split('data:')
+        for part in parts[1:]:  # skip the part before first 'data:'
+            part = part.strip()
+            if not part:
+                continue
+            # Extract JSON: find first '{' and last '}'
+            start = part.find('{')
+            if start == -1:
+                continue
+            end = part.rfind('}')
+            if end == -1:
+                continue
+            json_str = part[start:end + 1]
+            try:
+                results.append(json.loads(json_str))
+            except json.JSONDecodeError:
+                pass
+        if results:
+            return results
+    
+    # Fall back to plain JSON (single message)
+    if text_stripped.startswith('{') and text_stripped.endswith('}'):
+        try:
+            results.append(json.loads(text_stripped))
+            return results
+        except json.JSONDecodeError:
+            pass
+    
+    # Final fallback: if we have anything, try to parse it as JSON directly
+    try:
+        results.append(json.loads(text_stripped))
+    except (json.JSONDecodeError, ValueError):
+        pass
+    
+    return results
 
 
 class MCPClient:
@@ -81,7 +124,7 @@ class MCPClient:
                 self._session_id = resp.headers.get('mcp-session-id')
                 self.connected = resp.status == 200
                 text = await resp.text()
-                msgs = _parse_sse(text)
+                msgs = _parse_response(text)
                 if msgs:
                     self._initialized = True
                 else:
@@ -89,6 +132,13 @@ class MCPClient:
         except Exception:
             self.connected = False
             self._initialized = False
+            # Always clean up session if it was created but connection failed
+            if self._session:
+                try:
+                    await self._session.close()
+                except Exception:
+                    pass
+                self._session = None
         return self.connected
 
     async def disconnect(self):
@@ -126,11 +176,15 @@ class MCPClient:
                 headers=headers,
             ) as resp:
                 text = await resp.text()
-                msgs = _parse_sse(text)
+                # Debug: log raw response length and first 200 chars
+                print(f"[DEBUG] _call_tool({tool_name}) HTTP {resp.status}, response len={len(text)}")
+                print(f"[DEBUG] Response preview: {text[:200]}")
+                msgs = _parse_response(text)
+                print(f"[DEBUG] Parsed {len(msgs)} messages")
                 if not msgs:
                     return {
                         "success": False,
-                        "error": f"Empty response from server (HTTP {resp.status})",
+                        "error": f"Empty response from server (HTTP {resp.status})\nRaw: {text[:500]}",
                     }
                 msg = msgs[0]
                 if 'error' in msg:

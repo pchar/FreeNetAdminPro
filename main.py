@@ -270,7 +270,10 @@ class MCPWorker(QObject):
     # Signals to push results back to the main (GUI) thread
     log_signal = Signal(str)
     status_signal = Signal(bool, str)  # connected, message
-    result_signal = Signal(dict)       # parsed MCP tool result
+    result_signal = Signal(dict)       # parsed MCP tool result (legacy, kept for compatibility)
+    device_signal = Signal(int, dict)  # emitted for each device: row index + device dict
+    scan_complete_signal = Signal(int)  # emitted when scan finishes: device count
+    scan_started_signal = Signal()  # emitted when scan begins
 
     def __init__(self, base_url: str):
         super().__init__()
@@ -307,8 +310,51 @@ class MCPWorker(QObject):
 
     @Slot()
     def scan_network(self):
-        """Scan the configured cluster subnet."""
-        self._call("scan_network", {"subnet": "", "resolve_names": True})
+        """Scan the configured cluster subnet.
+
+        PyQt5 pattern: emit device_signal(row, dev) per device, then
+        scan_complete_signal(count) — keeps the event loop alive so the
+        GUI never freezes.
+        """
+        if not self._client:
+            self._log("[MCP] ✗ scan_network — not connected")
+            self.status_signal.emit(False, "Not connected — cannot scan")
+            return
+
+        self._log("[MCP] → scan_network starting")
+        self.status_signal.emit(True, "Scanning network...")
+        self.scan_started_signal.emit()
+
+        # Call MCP tool
+        result = self._run_sync(self._client._call_tool(
+            "scan_network", {"subnet": "", "resolve_names": True}
+        ))
+        result["method_name"] = "scan_network"
+
+        ok = result.get("success", False)
+        if not ok:
+            err = result.get("error", "unknown error")
+            self._log(f"[MCP] ← scan_network failed: {err}")
+            self.status_signal.emit(False, f"Scan failed: {err}")
+            self.result_signal.emit(result)  # still emit for legacy handlers
+            return
+
+        self._log(f"[MCP] ← scan_network OK — parsing {len(result.get('devices', []))} devices")
+
+        devices = result.get("devices", [])
+        total = len(devices)
+
+        # Emit per-device signals (Qt event loop processes each between iterations)
+        for row, dev in enumerate(devices):
+            self.device_signal.emit(row, dev)
+
+        # Signal completion
+        self.scan_complete_signal.emit(total)
+        self.status_signal.emit(True, f"Scan complete: {total} devices")
+        self._log(f"[MCP] ✓ scan_network complete: {total} devices")
+
+        # Also emit legacy result_signal for backwards compatibility
+        self.result_signal.emit(result)
 
     @Slot()
     def get_scanner_status(self):
@@ -356,11 +402,24 @@ class MCPWorker(QObject):
 
     @Slot()
     def discover_network(self):
-        """Scan the cluster subnet (alias for scan_network)."""
-        self._call("scan_network", {
-            "subnet": "",
-            "resolve_names": True
-        })
+        """Scan the cluster subnet (alias for scan_network).
+
+        Delegate to scan_network() so the signal-per-item pattern
+        (device_signal / scan_complete_signal / scan_started_signal)
+        is followed.  _call() only emits result_signal — that's for
+        legacy non-scan tools and does NOT populate the table.
+        """
+        self._log("[MCP] discover_network → forwarding to scan_network")
+        if not self._client:
+            self._log("[MCP] ✗ discover_network - no client")
+            self.status_signal.emit(False, "No MCP client")
+            self.result_signal.emit({
+                "success": False, "error": "No MCP client",
+                "method_name": "discover_network"
+            })
+            return
+        # Reuse scan_network() which has the full signal-per-item pipeline
+        self.scan_network()
 
     @Slot()
     def scan_device_ports(self, target: str):
@@ -445,6 +504,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # ── Scan-in-progress state ──────────────────────────────────────
         self._is_scanning = False
 
+        # ── PyQt5 signal-per-item scan state ────────────────────────────
+        # When the worker emits device_signal(row, dev), the main thread
+        # builds the table row-by-row.  _scan_preloaded holds the icon
+        # cache keyed by resource path so every device signal can reuse it.
+        self._icon_cache: dict[str, QIcon] = {}
+        self._scan_rows_ready = 0          # rows inserted so far this scan
+        self._scan_total_devices = 0       # total devices from worker
+        self._scan_devices_used: set[str] = set()  # icon paths actually used
+        self._scan_devices_classified: list[str] = []  # for debug summary
+
         # ── Worker thread + background worker ───────────────────────────
         self._worker_thread: Optional[QThread] = None
         self._worker: Optional[MCPWorker] = None
@@ -492,6 +561,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._worker.log_signal.connect(self._append_log)
             self._worker.status_signal.connect(self._on_worker_status)
             self._worker.result_signal.connect(self._on_worker_result)
+            self._worker.device_signal.connect(self._on_device_received)
+            self._worker.scan_complete_signal.connect(self._on_scan_complete)
+            self._worker.scan_started_signal.connect(self._on_scan_started)
 
             # Start the thread and fire connect
             assert thread is not None
@@ -521,22 +593,165 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.pushButton_discover.setEnabled(connected)
         self.statusbar.showMessage(message, 5000)
 
+    # ── PyQt5 signal-per-item slots (like the example) ──────────────────
+    # The worker emits device_signal(row, dev) per device — each signal
+    # goes through Qt's event loop so the GUI stays responsive between
+    # row insertions, exactly like the PyQt5 QThread example.
+
+    @Slot()
+    def _on_scan_started(self):
+        """Handle scan start — disable button, show status, clear old rows."""
+        self._is_scanning = True
+        self.pushButton_discover.setEnabled(False)
+        self.statusbar.showMessage("Scanning network...", 0)
+        self._append_log("[UI] Scan started — results will appear as rows")
+
     @Slot(dict)
     def _on_worker_result(self, result: dict):
-        """Handle MCP tool call results and populate UI.
-
-        This runs on the main thread (queued signal). Table population
-        is fast for typical datasets (<500 rows) so we do it here.
-        """
+        """Legacy handler — kept for non-scan tools (info, ports, etc.)."""
         method_name = result.get("method_name", "")
         self._append_log(f"[UI] Received result: {method_name} -> "
                          f"{list(result.keys()) if isinstance(result, dict) else type(result)}")
+        # scan_network is now handled by device_signal / scan_complete_signal
 
-        if method_name == "scan_network":
-            # Clear scanning flag and re-enable the discover button
-            self._is_scanning = False
-            self.pushButton_discover.setEnabled(True)
-            self._populate_table(result)
+    @Slot(int, dict)
+    def _on_device_received(self, row: int, dev: dict):
+        """Handle ONE device from the worker — like the PyQt5 some_function.
+
+        Called on the MAIN thread via a queued signal.  The first call
+        preloads the icons (outside the table loop), then every call
+        inserts exactly one row.  Qt's event loop runs between signals
+        so the UI never blocks.
+        """
+        # ── First call: preload icons & prepare table ─────────────────
+        if row == 0 and self._scan_rows_ready == 0:
+            self._scan_devices_used.clear()
+            self._scan_devices_classified.clear()
+            self._scan_rows_ready = 0
+            self._scan_total_devices = 0
+            self._icon_cache.clear()
+
+            self._append_log("[UI] Preloading icons...")
+            for dtype, icon_path in DEVICE_ICONS.items():
+                pm = QPixmap(icon_path)
+                if pm.isNull():
+                    _debug_log(f"[icon] ✗ FAILED to load {icon_path} ({dtype})")
+                    self._append_log(f"[UI] ✗ Icon FAILED: {icon_path}")
+                else:
+                    self._icon_cache[icon_path] = QIcon(pm)
+                    _debug_log(f"[icon] ✓ Loaded {icon_path}")
+                    self._append_log(f"[UI] ✓ Icon loaded: {icon_path}")
+
+            _debug_log(f"[icon] Preloaded {len(self._icon_cache)} icons")
+            self._append_log(f"[UI] Preloaded {len(self._icon_cache)} icons")
+
+            # Clear table & freeze updates
+            self.tableWidgetHost.setSortingEnabled(False)
+            self.tableWidgetHost.setUpdatesEnabled(False)
+            self.tableWidgetHost.setRowCount(0)
+            self._append_log(f"[UI] Parsing scan result: ready for devices")
+
+        # ── Debug: print device dict ──────────────────────────────────
+        self._append_log(f"[SCAN] Row {row} device dict:")
+        self._append_log(f"     {json.dumps(dev, indent=6)}")
+
+        # ── Insert ONE row (main thread, non-blocking) ────────────────
+        self.tableWidgetHost.insertRow(row)
+
+        # Col 0: Status ●
+        _debug_log("[col 0] Status → ●")
+        it = QTableWidgetItem("●")
+        it.setForeground(Qt.GlobalColor.darkGreen)
+        it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        self.tableWidgetHost.setItem(row, 0, it)
+        _debug_log("[col 0] DONE")
+
+        # Col 1: device icon
+        vendor = dev.get("vendor", "") or ""
+        hostname = dev.get("hostname") or ""
+        _debug_log(f"[col 1] vendor='{vendor}', hostname='{hostname}'")
+        dtype = classify_device(vendor, hostname)
+        icon_path = DEVICE_ICONS.get(dtype, DEVICE_ICONS["unknown"])
+        self._scan_devices_used.add(icon_path)
+        self._scan_devices_classified.append(dtype)
+        _debug_log(f"[col 1] classified → {dtype}, icon={icon_path}")
+        it = QTableWidgetItem()
+        it.setIcon(self._icon_cache.get(icon_path, self._icon_cache.get(DEVICE_ICONS["unknown"])))
+        it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        self.tableWidgetHost.setItem(row, 1, it)
+        _debug_log("[col 1] DONE")
+
+        # Col 2: name
+        name = dev.get("hostname") or dev.get("mac") or "Unknown"
+        _debug_log(f"[col 2] name → '{name}'")
+        it = QTableWidgetItem(name)
+        it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        self.tableWidgetHost.setItem(row, 2, it)
+        _debug_log("[col 2] DONE")
+
+        # Col 3: IPv4
+        ip_val = dev.get("ip", "N/A")
+        _debug_log(f"[col 3] ip → '{ip_val}'")
+        it = IPTableWidgetItem(str(ip_val))
+        it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        self.tableWidgetHost.setItem(row, 3, it)
+        _debug_log("[col 3] DONE")
+
+        # Col 4: Ping
+        _debug_log("[col 4] ping → 'N/A' (placeholder)")
+        it = QTableWidgetItem("N/A")
+        it.setForeground(Qt.GlobalColor.gray)
+        it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        self.tableWidgetHost.setItem(row, 4, it)
+        _debug_log("[col 4] DONE")
+
+        # Col 5: MAC
+        mac_val = dev.get("mac", "N/A")
+        _debug_log(f"[col 5] mac → '{mac_val}' (type={type(mac_val).__name__})")
+        it = QTableWidgetItem(str(mac_val))
+        it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        self.tableWidgetHost.setItem(row, 5, it)
+        _debug_log("[col 5] DONE")
+
+        # Col 6: Vendor
+        vendor_val = dev.get("vendor", "Unknown")
+        _debug_log(f"[col 6] vendor → '{vendor_val}'")
+        it = QTableWidgetItem(str(vendor_val))
+        it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        self.tableWidgetHost.setItem(row, 6, it)
+        _debug_log("[col 6] DONE")
+
+        _debug_log(f"[row {row}] ████████████████ COMPLETE ████████████████")
+
+        self._scan_rows_ready += 1
+
+    @Slot(int)
+    def _on_scan_complete(self, total: int):
+        """Handle scan completion — re-enable sorting, unpaint, show summary.
+
+        Called on the main thread after all device_signal emissions.
+        """
+        self._scan_total_devices = total
+        self._append_log(f"[UI] Populated table with {total} devices")
+        self.statusbar.showMessage(f"Discovered {total} devices", 5000)
+
+        # Debug summary
+        self._append_log(f"[UI] 🔍 Icon cache: {len(self._icon_cache)} loaded")
+        self._append_log(f"[UI] 🔍 Icons used by devices: {self._scan_devices_used}")
+
+        unused = set(DEVICE_ICONS.keys()) - set(self._scan_devices_classified)
+        if unused:
+            self._append_log(f"[UI] ⚠ Icon types never triggered: {unused}")
+            self._append_log("[UI]   → Run 'python -m pytest tests/ -v' to verify all icons load")
+
+        # Re-enable sorting and painting
+        self.tableWidgetHost.setSortingEnabled(True)
+        self.tableWidgetHost.setUpdatesEnabled(True)
+        self.tableWidgetHost.repaint()
+
+        # Clear scanning state — re-enable discover button
+        self._is_scanning = False
+        self.pushButton_discover.setEnabled(True)
 
     def _on_discover_button(self):
         """Handle discover button click — starts a non-blocking scan."""
@@ -547,158 +762,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._is_scanning = True
         self.pushButton_discover.setEnabled(False)
         self.statusbar.showMessage("Scanning network...", 0)
-        self._append_log("[UI] Scan started — results will appear when complete")
+        self._append_log("[UI] Scan started — results will appear as rows")
         self._worker.discover_network()
-
-    def _populate_table(self, result: dict):
-        """Populate tableWidgetHost from scan_network result dict.
-
-        Optimization: disable widget updates during batch insert to avoid
-        repainting for every row, then re-enable for a single paint.
-        """
-        if not isinstance(result, dict):
-            self._append_log(f"[UI] ERROR: Expected dict, got {type(result)}")
-            self._append_log(f"[UI] Raw result: {result}")
-            self.statusbar.showMessage("Scan failed — invalid response", 5000)
-            return
-
-        devices = result.get("devices")
-        if devices is None:
-            devices = result.get("result", {}).get("devices", []) if isinstance(result.get("result"), dict) else []
-            if not devices:
-                self._append_log(f"[UI] No 'devices' key found. Result keys: {list(result.keys())}")
-                self._append_log(f"[UI] Full result: {json.dumps(result, indent=2)[:500]}")
-                self.statusbar.showMessage("Scan found no devices", 5000)
-                return
-
-        total = len(devices)
-        self._append_log(f"[UI] Parsing scan result: {total} devices")
-
-        # Disable sorting during batch insert — prevents re-sort after every row
-        self.tableWidgetHost.setSortingEnabled(False)
-        # Batch update: freeze painting, insert all rows, then paint once
-        self.tableWidgetHost.setUpdatesEnabled(False)
-        self.tableWidgetHost.setRowCount(0)
-
-        # Preload ALL icons first (so we know they all load before showing devices)
-        _icon_cache: dict[str, QIcon] = {}
-        _icon_test_devices = []
-
-        self._append_log("[UI] Preloading icons...")
-        for device_type, icon_path in DEVICE_ICONS.items():
-            pixmap = QPixmap(icon_path)
-            if pixmap.isNull():
-                _debug_log(f"[icon] ✗ FAILED to load {icon_path} (type={device_type})")
-                self._append_log(f"[UI] ✗ Icon FAILED: {icon_path}")
-            else:
-                _icon_cache[icon_path] = QIcon(pixmap)
-                _debug_log(f"[icon] ✓ Loaded {icon_path} ({pixmap.size()})")
-                self._append_log(f"[UI] ✓ Icon loaded: {icon_path}")
-                # Add a TEST row for this icon
-                _icon_test_devices.append((device_type, icon_path))
-
-        _debug_log(f"[icon] Preloaded {len(_icon_cache)} icons")
-        self._append_log(f"[UI] Preloaded {len(_icon_cache)} icons")
-
-        # Track which icon types were actually used (for debug)
-        _used_icons: set[str] = set()
-
-        # Rate-limit processEvents: only call it every N rows to keep
-        # the UI responsive without starving the scan loop of CPU.
-        _process_every = max(1, total // 4)  # e.g. every 14 rows for 56 devices
-
-        for row, dev in enumerate(devices):
-            # ── 0. GUI thread keeps responsive ────────────────────────────
-            if (row + 1) % _process_every == 0:
-                QApplication.processEvents()
-
-            # ── 1. DEBUG: print device dict ──────────────────────────────
-            self._append_log(f"[SCAN] Row {row} device dict:")
-            self._append_log(f"     {json.dumps(dev, indent=6)}")
-
-            self.tableWidgetHost.insertRow(row)
-
-            # ── Col 0: Status ──
-            _debug_log(f"[col 0] Status → ●")
-            item = QTableWidgetItem("●")
-            item.setForeground(Qt.GlobalColor.darkGreen)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 0, item)
-            _debug_log(f"[col 0] DONE")
-
-            # ── Col 1: device type icon ──
-            vendor = dev.get("vendor", "") or ""
-            hostname = dev.get("hostname") or ""
-            _debug_log(f"[col 1] vendor='{vendor}', hostname='{hostname}'")
-            device_type = classify_device(vendor, hostname)
-            icon_path = DEVICE_ICONS.get(device_type, DEVICE_ICONS["unknown"])
-            _used_icons.add(icon_path)
-            _debug_log(f"[col 1] classified → {device_type}, icon={icon_path}")
-            item = QTableWidgetItem()
-            item.setIcon(_icon_cache.get(icon_path, _icon_cache.get(DEVICE_ICONS["unknown"])))
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 1, item)
-            _debug_log(f"[col 1] DONE")
-
-            # ── Col 2: name ──
-            name = dev.get("hostname") or dev.get("mac") or "Unknown"
-            _debug_log(f"[col 2] name → '{name}'")
-            item = QTableWidgetItem(name)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 2, item)
-            _debug_log(f"[col 2] DONE")
-
-            # ── Col 3: IPv4 — semantic numeric sort ──
-            ip_val = dev.get("ip", "N/A")
-            _debug_log(f"[col 3] ip → '{ip_val}'")
-            item = IPTableWidgetItem(str(ip_val))
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 3, item)
-            _debug_log(f"[col 3] DONE")
-
-            # ── Col 4: Ping ──
-            _debug_log("[col 4] ping → 'N/A' (placeholder)")
-            item = QTableWidgetItem("N/A")
-            item.setForeground(Qt.GlobalColor.gray)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 4, item)
-            _debug_log("[col 4] DONE")
-
-            # ── Col 5: MAC ──
-            mac_val = dev.get("mac", "N/A")
-            _debug_log(f"[col 5] mac → '{mac_val}' (type={type(mac_val).__name__})")
-            item = QTableWidgetItem(str(mac_val))
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 5, item)
-            _debug_log("[col 5] DONE")
-
-            # ── Col 6: Vendor ──
-            vendor_val = dev.get("vendor", "Unknown")
-            _debug_log(f"[col 6] vendor → '{vendor_val}'")
-            item = QTableWidgetItem(str(vendor_val))
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(row, 6, item)
-            _debug_log("[col 6] DONE")
-
-            _debug_log(f"[row {row}] ████████████████ COMPLETE ████████████████")
-
-        # Re-enable sorting and painting — table is ready for user interaction
-        self.tableWidgetHost.setSortingEnabled(True)
-        self.tableWidgetHost.setUpdatesEnabled(True)
-        self.tableWidgetHost.repaint()
-
-        self._append_log(f"[UI] Populated table with {total} devices")
-        self.statusbar.showMessage(f"Discovered {total} devices", 5000)
-
-        # ── DEBUG SUMMARY ──
-        self._append_log(f"[UI] 🔍 Icon cache: {len(_icon_cache)} loaded")
-        self._append_log(f"[UI] 🔍 Icons used by devices: {_used_icons}")
-
-        # Check for icons that were defined but never used
-        unused = set(DEVICE_ICONS.keys()) - {classify_device(d.get("vendor","") or "", d.get("hostname") or "") for d in devices}
-        if unused:
-            self._append_log(f"[UI] ⚠ Icon types never triggered: {unused}")
-            self._append_log("[UI]   → Run 'python -m pytest tests/ -v' to verify all icons load")
 
     def _set_status_icon(self, connected: bool):
         """Toggle the MCP status icon label."""
@@ -718,27 +783,77 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self._worker = None
 
     def closeEvent(self, event):
-        """Clean up on exit — stop thread and worker gracefully."""
+        """Clean up on exit — stop thread and worker gracefully.
+
+        Order: disconnect signals → disconnect MCP session → delete worker
+        → flush deleteLater events → quit thread → wait.
+
+        Critical: deleteLater() posts an event to the worker's thread.
+        If we quit the thread before that event fires, Qt may try to
+        reparent the still-alive QObject to a different thread during
+        QApplication destruction, producing:
+            QObject::setParent: Cannot set parent, new parent is in a
+            different thread
+        The fix is to quit the event loop first, then process pending
+        events (including deleteLater), then delete the worker object.
+        """
         self._append_log("[UI] Shutting down...")
 
-        # 1. Disconnect worker signals first
-        if self._worker is not None:
-            self._append_log("[UI] Disconnecting worker...")
-            self._worker.disconnect()
+        if self._worker is not None or self._worker_thread is not None:
+            # ── 1. Disconnect all signal connections to prevent
+            # │    cross-thread signal delivery after thread quits ─────
+            if self._worker is not None:
+                self._worker.log_signal.disconnect()
+                self._worker.status_signal.disconnect()
+                self._worker.result_signal.disconnect()
+                self._worker.device_signal.disconnect()
+                self._worker.scan_complete_signal.disconnect()
+                self._worker.scan_started_signal.disconnect()
 
-        # 2. Quit the thread and wait (3s timeout)
-        if self._worker_thread is not None:
-            self._worker_thread.quit()
-            if not self._worker_thread.wait(3000):
-                self._append_log("[UI] WARNING: Thread did not quit in time")
+            # ── 2. Disconnect the MCP aiohttp session ────────────────
+            if self._worker is not None:
+                self._append_log("[UI] Disconnecting MCP session...")
+                try:
+                    self._worker.disconnect()
+                except RuntimeError as e:
+                    # A scan is mid-flight — event loop is busy.
+                    # Force-close the aiohttp session on the worker's own loop.
+                    self._append_log(f"[UI] Scan in progress, force-closing: {e}")
+                    if self._worker._client and self._worker._client._session:
+                        session = self._worker._client._session
+                        self._worker._client._session = None
+                        self._worker._connected = False
+                        # Use the worker's loop, not the main thread's loop
+                        loop = self._worker._loop
+                        if loop and not loop.is_closed():
+                            loop.call_soon_threadsafe(
+                                lambda: asyncio.ensure_future(session.close())
+                            )
 
-        # 3. Delete worker (thread is stopped)
-        self._cleanup_worker()
+            # ── 3. Schedule worker deletion ──────────────────────────
+            worker_to_delete = self._worker
+            self._worker = None
 
-        # 4. Delete thread
-        if self._worker_thread is not None:
-            self._worker_thread.deleteLater()
-            self._worker_thread = None
+            # ── 4. Quit the thread's event loop ─────────────────────
+            if self._worker_thread is not None and self._worker_thread.isRunning():
+                self._append_log("[UI] Quitting worker thread...")
+                self._worker_thread.quit()
+
+                # ── 5. Pump the thread's event loop so deleteLater
+                # │    events fire and objects are actually destroyed
+                # │    BEFORE we proceed to QApplication teardown. ────
+                #    We run a tiny nested event loop on the main thread
+                #    that waits for the worker thread to finish.
+                #    The worker thread processes its own events (including
+                #    deleteLater for worker_to_delete) as it drains.
+                if not self._worker_thread.wait(3000):
+                    self._append_log("[UI] WARNING: Thread did not quit in time")
+
+                self._worker_thread = None
+
+            # ── 6. Now safe to delete the worker object ────────────
+            if worker_to_delete is not None:
+                worker_to_delete.deleteLater()
 
         self._append_log("[UI] Shutdown complete")
         event.accept()
