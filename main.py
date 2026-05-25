@@ -12,6 +12,7 @@ import asyncio
 import logging
 from datetime import datetime
 
+from typing import Optional
 from PySide6.QtWidgets import QMainWindow, QApplication
 from PySide6.QtCore import QObject, Signal, QThread, Slot
 from PySide6.QtGui import QPixmap
@@ -34,9 +35,9 @@ class MCPWorker(QObject):
     def __init__(self, base_url: str):
         super().__init__()
         self._base_url = base_url
-        self._client: MCPClient | None = None
+        self._client: Optional[MCPClient] = None
         self._connected = False
-        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     # ── Connection ──────────────────────────────────────────────────────
 
@@ -206,8 +207,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             # Create worker with this URL (destroy previous if any)
             self._cleanup_worker()
             self._worker = MCPWorker(url)
-            self._worker.setParent(self._worker_thread)
             self._worker.moveToThread(self._worker_thread)
+            self._worker.setParent(self._worker_thread)
 
             # Wire signals
             self._worker.log_signal.connect(self._append_log)
@@ -231,6 +232,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _on_worker_status(self, connected: bool, message: str):
         """Handle status updates from the worker thread."""
         self._set_status_icon(connected)
+        self.pushButton_mcp.setChecked(connected)
         self.pushButton_mcp.setText("Disconnect" if connected else "Connect")
         self.statusbar.showMessage(message, 5000)
 
