@@ -65,6 +65,11 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4.addWidget(self.ApplypushButton)
 
+        self.pushButton_discover = QPushButton(self.centralwidget)
+        self.pushButton_discover.setObjectName(u"pushButton_discover")
+
+        self.horizontalLayout_4.addWidget(self.pushButton_discover)
+
         self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_4.addItem(self.horizontalSpacer)
@@ -96,7 +101,7 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout_4.addWidget(self.pushButton_mcp)
 
-        self.horizontalLayout_4.setStretch(3, 1)
+        self.horizontalLayout_4.setStretch(4, 1)
 
         self.gridLayout.addLayout(self.horizontalLayout_4, 0, 0, 1, 1)
 
@@ -197,6 +202,7 @@ class Ui_MainWindow(object):
         self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200.0/24", None))
         self.cluster.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 172.30.200.0/24", None))
         self.ApplypushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
+        self.pushButton_discover.setText(QCoreApplication.translate("MainWindow", u"discover", None))
         self.label_mcp.setText(QCoreApplication.translate("MainWindow", u"MCP", None))
         self.label_mcp_status.setText("")
         self.lineEdit_mcp.setText(QCoreApplication.translate("MainWindow", u"http://localhost:8009", None))

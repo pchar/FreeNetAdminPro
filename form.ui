@@ -16,7 +16,7 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout" columnstretch="5,1">
     <item row="0" column="0">
-     <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="0,0,0,1,0,0,0,0">
+     <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="0,0,0,0,1,0,0,0,0">
       <item>
        <widget class="QLabel" name="label_cluster">
         <property name="text">
@@ -47,6 +47,13 @@
        <widget class="QPushButton" name="ApplypushButton">
         <property name="text">
          <string>Apply</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="pushButton_discover">
+        <property name="text">
+         <string>discover</string>
         </property>
        </widget>
       </item>
