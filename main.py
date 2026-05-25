@@ -603,54 +603,84 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # Track which icon types were actually used (for debug)
         _used_icons: set[str] = set()
 
-        for dev in devices:
-            row = self.tableWidgetHost.rowCount()
+        # Rate-limit processEvents: only call it every N rows to keep
+        # the UI responsive without starving the scan loop of CPU.
+        _process_every = max(1, total // 4)  # e.g. every 14 rows for 56 devices
+
+        for row, dev in enumerate(devices):
+            # ── 0. GUI thread keeps responsive ────────────────────────────
+            if (row + 1) % _process_every == 0:
+                QApplication.processEvents()
+
+            # ── 1. DEBUG: print device dict ──────────────────────────────
+            self._append_log(f"[SCAN] Row {row} device dict:")
+            self._append_log(f"     {json.dumps(dev, indent=6)}")
+
             self.tableWidgetHost.insertRow(row)
 
             # ── Col 0: Status ──
+            _debug_log(f"[col 0] Status → ●")
             item = QTableWidgetItem("●")
             item.setForeground(Qt.GlobalColor.darkGreen)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 0, item)
+            _debug_log(f"[col 0] DONE")
 
             # ── Col 1: device type icon ──
             vendor = dev.get("vendor", "") or ""
             hostname = dev.get("hostname") or ""
+            _debug_log(f"[col 1] vendor='{vendor}', hostname='{hostname}'")
             device_type = classify_device(vendor, hostname)
             icon_path = DEVICE_ICONS.get(device_type, DEVICE_ICONS["unknown"])
             _used_icons.add(icon_path)
-            _debug_log(f"[device] Row {row}: type={device_type}, icon={icon_path}")
+            _debug_log(f"[col 1] classified → {device_type}, icon={icon_path}")
             item = QTableWidgetItem()
             item.setIcon(_icon_cache.get(icon_path, _icon_cache.get(DEVICE_ICONS["unknown"])))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 1, item)
+            _debug_log(f"[col 1] DONE")
 
             # ── Col 2: name ──
             name = dev.get("hostname") or dev.get("mac") or "Unknown"
+            _debug_log(f"[col 2] name → '{name}'")
             item = QTableWidgetItem(name)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 2, item)
+            _debug_log(f"[col 2] DONE")
 
             # ── Col 3: IPv4 — semantic numeric sort ──
-            item = IPTableWidgetItem(str(dev.get("ip", "N/A")))
+            ip_val = dev.get("ip", "N/A")
+            _debug_log(f"[col 3] ip → '{ip_val}'")
+            item = IPTableWidgetItem(str(ip_val))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 3, item)
+            _debug_log(f"[col 3] DONE")
 
             # ── Col 4: Ping ──
+            _debug_log("[col 4] ping → 'N/A' (placeholder)")
             item = QTableWidgetItem("N/A")
             item.setForeground(Qt.GlobalColor.gray)
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 4, item)
+            _debug_log("[col 4] DONE")
 
             # ── Col 5: MAC ──
-            item = QTableWidgetItem(str(dev.get("mac", "N/A")))
+            mac_val = dev.get("mac", "N/A")
+            _debug_log(f"[col 5] mac → '{mac_val}' (type={type(mac_val).__name__})")
+            item = QTableWidgetItem(str(mac_val))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 5, item)
+            _debug_log("[col 5] DONE")
 
             # ── Col 6: Vendor ──
-            item = QTableWidgetItem(str(dev.get("vendor", "Unknown")))
+            vendor_val = dev.get("vendor", "Unknown")
+            _debug_log(f"[col 6] vendor → '{vendor_val}'")
+            item = QTableWidgetItem(str(vendor_val))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 6, item)
+            _debug_log("[col 6] DONE")
+
+            _debug_log(f"[row {row}] ████████████████ COMPLETE ████████████████")
 
         # Re-enable sorting and painting — table is ready for user interaction
         self.tableWidgetHost.setSortingEnabled(True)
