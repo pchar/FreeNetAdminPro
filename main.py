@@ -49,13 +49,22 @@ class IPTableWidgetItem(QTableWidgetItem):
             return -1  # non-IP addresses sort first (before valid ones)
 
     def __lt__(self, other):
+        # Guard: if other is not an IPTableWidgetItem, fall back to string compare
+        if not isinstance(other, IPTableWidgetItem):
+            return super().__lt__(other)
+        
         self_num = self.data(Qt.UserRole)
         other_num = other.data(Qt.UserRole)
+        
+        # Handle None values (shouldn't happen, but guard against it)
+        if self_num is None or other_num is None:
+            return super().__lt__(other)
+        
         if self_num != -1 and other_num != -1:
             # Both are valid IPs → numeric comparison
             return self_num < other_num
         if self_num == -1 and other_num == -1:
-            # Both are non-IPs (e.g. "N/A") → string comparison
+            # Both are non-IPs → string comparison
             return super().__lt__(other)
         # Valid IPs always sort before non-IPs
         return self_num != -1
@@ -651,88 +660,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._append_log(f"[UI] Populated table with {total} devices")
         self.statusbar.showMessage(f"Discovered {total} devices", 5000)
 
-        # ── ICON TEST PHASE: Add a row for every icon type to visually verify ──
-        self._append_log("[UI] ═══════════════════════════════════════")
-        self._append_log("[UI] ▶ Adding icon test rows...")
-        _debug_log("[icon_test] Adding test rows for every icon type")
-
-        test_row = self.tableWidgetHost.rowCount()
-        self.tableWidgetHost.insertRow(test_row)
-
-        # Status column for test rows (yellow, non-selectable)
-        item = QTableWidgetItem("⚠")
-        item.setForeground(Qt.GlobalColor.yellow)
-        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-        self.tableWidgetHost.setItem(test_row, 0, item)
-
-        # Name column: "ICON TEST — <type>"
-        for device_type, icon_path in _icon_test_devices:
-            test_row = self.tableWidgetHost.rowCount()
-            self.tableWidgetHost.insertRow(test_row)
-
-            # Status
-            item = QTableWidgetItem("⚠")
-            item.setForeground(Qt.GlobalColor.yellow)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(test_row, 0, item)
-
-            # Icon
-            test_item = QTableWidgetItem()
-            test_icon = _icon_cache.get(icon_path)
-            if test_icon is not None:
-                test_item.setIcon(test_icon)
-                _debug_log(f"[icon_test] ✓ Test row for {device_type}: icon loaded OK")
-            else:
-                _debug_log(f"[icon_test] ✗ Test row for {device_type}: icon FAILED")
-            test_item.setFlags(test_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(test_row, 1, test_item)
-
-            # Name
-            item = QTableWidgetItem(f"ICON TEST — {device_type} ({icon_path})")
-            item.setForeground(Qt.GlobalColor.darkMagenta)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(test_row, 2, item)
-
-            # IP column: "TEST-{device_type}"
-            item = QTableWidgetItem(f"TEST-{device_type}")
-            item.setForeground(Qt.GlobalColor.darkMagenta)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(test_row, 3, item)
-
-            # Ping: "TEST"
-            item = QTableWidgetItem("TEST")
-            item.setForeground(Qt.GlobalColor.darkMagenta)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(test_row, 4, item)
-
-            # MAC: "00:TEST:MAC"
-            item = QTableWidgetItem(f"00:TEST:{device_type.upper()}")
-            item.setForeground(Qt.GlobalColor.darkMagenta)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(test_row, 5, item)
-
-            # Vendor: "TEST ICON"
-            item = QTableWidgetItem("TEST ICON")
-            item.setForeground(Qt.GlobalColor.darkMagenta)
-            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            self.tableWidgetHost.setItem(test_row, 6, item)
-
-        self._append_log(f"[UI] ✓ Added {len(_icon_test_devices)} icon test rows")
-        self._append_log("[UI] Yellow ⚠ rows = test rows (can be ignored)")
-        self._append_log("[UI] ═══════════════════════════════════════")
-
         # ── DEBUG SUMMARY ──
         self._append_log(f"[UI] 🔍 Icon cache: {len(_icon_cache)} loaded")
         self._append_log(f"[UI] 🔍 Icons used by devices: {_used_icons}")
-        self._append_log(f"[UI] 🔍 Icon types in DEVICE_ICONS: {list(DEVICE_ICONS.keys())}")
 
         # Check for icons that were defined but never used
         unused = set(DEVICE_ICONS.keys()) - {classify_device(d.get("vendor","") or "", d.get("hostname") or "") for d in devices}
         if unused:
             self._append_log(f"[UI] ⚠ Icon types never triggered: {unused}")
-            self._append_log(f"[UI]   → These icons may indicate missing vendor/hostname data")
-        else:
-            self._append_log(f"[UI] ✓ All icon types triggered at least once")
+            self._append_log("[UI]   → Run 'python -m pytest tests/ -v' to verify all icons load")
 
     def _set_status_icon(self, connected: bool):
         """Toggle the MCP status icon label."""
