@@ -16,7 +16,7 @@
   <widget class="QWidget" name="centralwidget">
    <layout class="QGridLayout" name="gridLayout" columnstretch="5,1">
     <item row="0" column="0">
-     <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="0,0,0,1,0,0,0">
+     <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="0,0,0,1,0,0,0,0">
       <item>
        <widget class="QLabel" name="label_cluster">
         <property name="text">
@@ -104,7 +104,7 @@
          </size>
         </property>
         <property name="text">
-         <string>http://localhost:8000/v1</string>
+         <string>http://localhost:8009</string>
         </property>
        </widget>
       </item>
