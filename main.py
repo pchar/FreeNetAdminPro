@@ -19,6 +19,7 @@ from typing import Optional
 from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem
 from PySide6.QtCore import QObject, Signal, QThread, Slot, Qt
 from PySide6.QtGui import QPixmap, QIcon
+from PySide6.QtSvg import QSvgRenderer  # ensure SVG renderer plugin is loaded
 
 from ui_form import Ui_MainWindow
 from mcp_handler import MCPClient
@@ -113,8 +114,11 @@ APPLE_VENDORS = [
 
 # Known hostname patterns
 WINDOWS_PATTERNS = ["win-", "win_", "desktop-", "desktop_"]
-SERVER_PATTERNS = ["srv", "server", "nas", "storage", "db-", "db_"]
+SERVER_PATTERNS = ["srv", "server", "nas", "storage", "db-", "db_", "slave"]
 IOS_PATTERNS = ["iphone", "ipad", "ipod", "macbook", "imac", "mac mini"]
+
+# IoT/home devices - these often have vendor='Unknown' but identifiable hostnames
+IOT_VENDORS = ["bosch", "siemens", "miele", "viessmann", "netatmo", "ezviz", "ring", "nest", "tplink", "kasa", "sonoff"]
 
 
 def classify_device(vendor: str, hostname: str) -> str:
@@ -127,48 +131,124 @@ def classify_device(vendor: str, hostname: str) -> str:
     vendor_lower = (vendor or "").lower()
     host_lower = (hostname or "").lower()
 
+    # Debug: log classification inputs only for unknown matches or first pass
+    _classification_count = getattr(classify_device, '_count', 0) + 1
+    classify_device._count = _classification_count
+    if _classification_count <= 1:
+        _debug_log(f"[classify_device] Starting classification ({vendor!r}, {hostname!r})")
+
     # 1. Check for Apple products (vendor-based, highest priority)
     for kw in APPLE_VENDORS:
         if kw in vendor_lower:
-            return "apple"
+            result = "apple"
+            _debug_log(f"[classify_device] ✓ Apple vendor match: '{kw}' in vendor")
+            return result
 
     # 2. Check hostname for Apple devices
     for kw in IOS_PATTERNS:
         if kw in host_lower:
-            return "ios"
+            result = "ios"
+            _debug_log(f"[classify_device] ✓ iOS hostname match: '{kw}' in hostname")
+            return result
 
     # 3. Check hostname for Windows devices
     for kw in WINDOWS_PATTERNS:
         if kw in host_lower:
-            return "windows"
+            result = "windows"
+            _debug_log(f"[classify_device] ✓ Windows hostname match: '{kw}' in hostname")
+            return result
 
     # 4. Check hostname for Linux servers
     for kw in SERVER_PATTERNS:
         if kw in host_lower:
-            return "server"
+            result = "server"
+            _debug_log(f"[classify_device] ✓ Server hostname match: '{kw}' in hostname")
+            return result
 
     # 5. Check vendor for known Linux/Server hardware
     for kw in LINUX_VENDORS:
         if kw in vendor_lower:
             # Server manufacturers → server icon
             if any(s in vendor_lower for s in ["dell", "hpe", "hp inc", "lenovo", "ibm", "super micro", "raspberry pi"]):
-                return "server"
+                result = "server"
+                _debug_log(f"[classify_device] ✓ Server vendor match: '{kw}' in vendor")
+                return result
             # Network equipment
             if any(n in vendor_lower for n in ["cisco", "juniper", "arista", "mikrotik", "ubiquiti", "fortinet"]):
-                return "network"
+                result = "network"
+                _debug_log(f"[classify_device] ✓ Network vendor match: '{kw}' in vendor")
+                return result
             # Otherwise regular Linux device
-            return "linux"
+            result = "linux"
+            _debug_log(f"[classify_device] ✓ Linux vendor match: '{kw}' in vendor")
+            return result
 
-    # 6. Mobile devices often have vendor names like "Apple", "Samsung", etc.
+    # 6. IoT/home devices - often have vendor='Unknown' but identifiable hostnames
+    iot_patterns = [
+        # Smart home brands
+        "bosch", "siemens", "miele", "viessmann", "netatmo",
+        "ring", "nest", "tplink", "kasa", "sonoff", "tuya",
+        "philips hue", "wemo", "ecobee", "honeywell", "ecobee",
+        # IoT camera/sensor brands
+        "ezviz", "ring", "blink", "arlo", "annke", "reolink",
+        # Smart appliances
+        "dishwasher", "washing", "fridge", "oven", "oven-",
+        # Router/accessory brands
+        "gl-mt", "airlock", "airrouter", "nighthawk", "orbi",
+        # Generic IoT patterns
+        "smart", "iot-", "sensor",
+    ]
+    for kw in iot_patterns:
+        if kw in host_lower:
+            result = "server"  # IoT devices share server icon
+            _debug_log(f"[classify_device] ✓ IoT hostname match: '{kw}' in hostname")
+            return result
+
+    # 7. Linux workstations/servers with vendor='Unknown' - common hostname patterns
+    #    Many Linux systems don't report vendor, but hostnames reveal them
+    linux_patterns = [
+        # Distribution identifiers
+        "arch", "gentoo", "fedora", "ubuntu", "debian", "centos", "rhel", "opensuse",
+        "kali", "parrot", "raspbian", "pi-hole", "omv", "openmediavault",
+        # Common server names
+        "master", "slave", "node", "worker", "cluster", "compute",
+        # Greek/mythology names (common for Linux workstations)
+        "castor", "pollux", "venus", "sun", "eris", "pluto", "ceres", "juno",
+        "dione", "tethys", "hebe", "iris", "helene", "calypso", "enceladus",
+        "charon", "nereid", "thetis", "triton", "orion", "ursa", "lyra", "cygnus",
+        # Lab/scientific naming
+        "cicladi", "chiara", "dione", "eris",
+        # 3D printers, embedded Linux
+        "ultimaker", "prusa", "creality", "rswave", "rsmat", "raspberry",
+        # Network interface names in hostname
+        "wlan0", "eth0", "enp", "eno",
+        # Generic Linux workstation patterns
+        "workstation", "dev-", "staging-", "prod-", "jenkins", "gitlab",
+    ]
+    for kw in linux_patterns:
+        if kw in host_lower:
+            result = "linux"
+            _debug_log(f"[classify_device] ✓ Linux hostname match: '{kw}' in hostname")
+            return result
+
+    # 8. Mobile devices often have vendor names like "Apple", "Samsung", etc.
     #    Check mobile vendor patterns (fallback)
     mobile_vendors = ["samsung", "huawei", "xiaomi", "oppo", "vivo", "oneplus", "nokia", "lg electronics"]
     for kw in mobile_vendors:
         if kw in vendor_lower:
-            # Could be Android phone or IoT device
-            return "android"
+            result = "android"
+            _debug_log(f"[classify_device] ✓ Android vendor match: '{kw}' in vendor")
+            return result
 
-    # 7. Default — assume generic network device
+    # 9. Default — assume generic network device
+    _debug_log("[classify_device] ⚠ No match — defaulting to 'unknown'")
     return "unknown"
+
+
+def _debug_log(msg: str):
+    """Log a debug message to stdout (will appear in console during dev)."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}")
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -491,8 +571,28 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.tableWidgetHost.setUpdatesEnabled(False)
         self.tableWidgetHost.setRowCount(0)
 
-        # Preload icons once (avoid repeated QPixmap construction)
+        # Preload ALL icons first (so we know they all load before showing devices)
         _icon_cache: dict[str, QIcon] = {}
+        _icon_test_devices = []
+
+        self._append_log("[UI] Preloading icons...")
+        for device_type, icon_path in DEVICE_ICONS.items():
+            pixmap = QPixmap(icon_path)
+            if pixmap.isNull():
+                _debug_log(f"[icon] ✗ FAILED to load {icon_path} (type={device_type})")
+                self._append_log(f"[UI] ✗ Icon FAILED: {icon_path}")
+            else:
+                _icon_cache[icon_path] = QIcon(pixmap)
+                _debug_log(f"[icon] ✓ Loaded {icon_path} ({pixmap.size()})")
+                self._append_log(f"[UI] ✓ Icon loaded: {icon_path}")
+                # Add a TEST row for this icon
+                _icon_test_devices.append((device_type, icon_path))
+
+        _debug_log(f"[icon] Preloaded {len(_icon_cache)} icons")
+        self._append_log(f"[UI] Preloaded {len(_icon_cache)} icons")
+
+        # Track which icon types were actually used (for debug)
+        _used_icons: set[str] = set()
 
         for dev in devices:
             row = self.tableWidgetHost.rowCount()
@@ -509,10 +609,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             hostname = dev.get("hostname") or ""
             device_type = classify_device(vendor, hostname)
             icon_path = DEVICE_ICONS.get(device_type, DEVICE_ICONS["unknown"])
-            if icon_path not in _icon_cache:
-                _icon_cache[icon_path] = QIcon(QPixmap(icon_path))
+            _used_icons.add(icon_path)
+            _debug_log(f"[device] Row {row}: type={device_type}, icon={icon_path}")
             item = QTableWidgetItem()
-            item.setIcon(_icon_cache[icon_path])
+            item.setIcon(_icon_cache.get(icon_path, _icon_cache.get(DEVICE_ICONS["unknown"])))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self.tableWidgetHost.setItem(row, 1, item)
 
@@ -550,6 +650,89 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         self._append_log(f"[UI] Populated table with {total} devices")
         self.statusbar.showMessage(f"Discovered {total} devices", 5000)
+
+        # ── ICON TEST PHASE: Add a row for every icon type to visually verify ──
+        self._append_log("[UI] ═══════════════════════════════════════")
+        self._append_log("[UI] ▶ Adding icon test rows...")
+        _debug_log("[icon_test] Adding test rows for every icon type")
+
+        test_row = self.tableWidgetHost.rowCount()
+        self.tableWidgetHost.insertRow(test_row)
+
+        # Status column for test rows (yellow, non-selectable)
+        item = QTableWidgetItem("⚠")
+        item.setForeground(Qt.GlobalColor.yellow)
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        self.tableWidgetHost.setItem(test_row, 0, item)
+
+        # Name column: "ICON TEST — <type>"
+        for device_type, icon_path in _icon_test_devices:
+            test_row = self.tableWidgetHost.rowCount()
+            self.tableWidgetHost.insertRow(test_row)
+
+            # Status
+            item = QTableWidgetItem("⚠")
+            item.setForeground(Qt.GlobalColor.yellow)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(test_row, 0, item)
+
+            # Icon
+            test_item = QTableWidgetItem()
+            test_icon = _icon_cache.get(icon_path)
+            if test_icon is not None:
+                test_item.setIcon(test_icon)
+                _debug_log(f"[icon_test] ✓ Test row for {device_type}: icon loaded OK")
+            else:
+                _debug_log(f"[icon_test] ✗ Test row for {device_type}: icon FAILED")
+            test_item.setFlags(test_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(test_row, 1, test_item)
+
+            # Name
+            item = QTableWidgetItem(f"ICON TEST — {device_type} ({icon_path})")
+            item.setForeground(Qt.GlobalColor.darkMagenta)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(test_row, 2, item)
+
+            # IP column: "TEST-{device_type}"
+            item = QTableWidgetItem(f"TEST-{device_type}")
+            item.setForeground(Qt.GlobalColor.darkMagenta)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(test_row, 3, item)
+
+            # Ping: "TEST"
+            item = QTableWidgetItem("TEST")
+            item.setForeground(Qt.GlobalColor.darkMagenta)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(test_row, 4, item)
+
+            # MAC: "00:TEST:MAC"
+            item = QTableWidgetItem(f"00:TEST:{device_type.upper()}")
+            item.setForeground(Qt.GlobalColor.darkMagenta)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(test_row, 5, item)
+
+            # Vendor: "TEST ICON"
+            item = QTableWidgetItem("TEST ICON")
+            item.setForeground(Qt.GlobalColor.darkMagenta)
+            item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            self.tableWidgetHost.setItem(test_row, 6, item)
+
+        self._append_log(f"[UI] ✓ Added {len(_icon_test_devices)} icon test rows")
+        self._append_log("[UI] Yellow ⚠ rows = test rows (can be ignored)")
+        self._append_log("[UI] ═══════════════════════════════════════")
+
+        # ── DEBUG SUMMARY ──
+        self._append_log(f"[UI] 🔍 Icon cache: {len(_icon_cache)} loaded")
+        self._append_log(f"[UI] 🔍 Icons used by devices: {_used_icons}")
+        self._append_log(f"[UI] 🔍 Icon types in DEVICE_ICONS: {list(DEVICE_ICONS.keys())}")
+
+        # Check for icons that were defined but never used
+        unused = set(DEVICE_ICONS.keys()) - {classify_device(d.get("vendor","") or "", d.get("hostname") or "") for d in devices}
+        if unused:
+            self._append_log(f"[UI] ⚠ Icon types never triggered: {unused}")
+            self._append_log(f"[UI]   → These icons may indicate missing vendor/hostname data")
+        else:
+            self._append_log(f"[UI] ✓ All icon types triggered at least once")
 
     def _set_status_icon(self, connected: bool):
         """Toggle the MCP status icon label."""
