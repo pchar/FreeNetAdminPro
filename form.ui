@@ -6,15 +6,15 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>800</width>
-    <height>600</height>
+    <width>1086</width>
+    <height>845</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QGridLayout" name="gridLayout">
+   <layout class="QGridLayout" name="gridLayout" columnstretch="5,1">
     <item row="0" column="0">
      <layout class="QHBoxLayout" name="horizontalLayout_4" stretch="0,4,1,9">
       <item>
@@ -77,14 +77,14 @@
       <item>
        <layout class="QVBoxLayout" name="verticalLayout_2" stretch="0,0">
         <item>
-         <widget class="QLabel" name="label">
+         <widget class="QLabel" name="labelClusters">
           <property name="text">
-           <string>Hostname</string>
+           <string>Clusters</string>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QTableWidget" name="tableWidget">
+         <widget class="QTableWidget" name="tableWidgetHost">
           <column>
            <property name="text">
             <string>Status</string>
@@ -127,15 +127,57 @@
      </layout>
     </item>
     <item row="1" column="1">
-     <layout class="QVBoxLayout" name="verticalLayout">
+     <layout class="QVBoxLayout" name="verticalLayout" stretch="4,56">
       <item>
-       <widget class="QSpinBox" name="spinBox"/>
+       <spacer name="verticalSpacer">
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
       </item>
       <item>
-       <widget class="QScrollBar" name="horizontalScrollBar">
-        <property name="orientation">
-         <enum>Qt::Orientation::Horizontal</enum>
-        </property>
+       <widget class="QTreeWidget" name="treeWidgetDevice">
+        <column>
+         <property name="text">
+          <string>device</string>
+         </property>
+        </column>
+        <item>
+         <property name="text">
+          <string>fdsfs</string>
+         </property>
+         <item>
+          <property name="text">
+           <string>New Subitem</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>New Item</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>New Item</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>New Item</string>
+          </property>
+          <item>
+           <property name="text">
+            <string>New Subitem</string>
+           </property>
+          </item>
+         </item>
+        </item>
        </widget>
       </item>
      </layout>

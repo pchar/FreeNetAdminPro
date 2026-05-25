@@ -18,16 +18,16 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QTransform)
 from PySide6.QtWidgets import (QApplication, QGridLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMainWindow, QPushButton,
-    QScrollBar, QSizePolicy, QSpacerItem, QSpinBox,
-    QStatusBar, QTableWidget, QTableWidgetItem, QTextEdit,
-    QToolBar, QVBoxLayout, QWidget)
+    QSizePolicy, QSpacerItem, QStatusBar, QTableWidget,
+    QTableWidgetItem, QTextEdit, QToolBar, QTreeWidget,
+    QTreeWidgetItem, QVBoxLayout, QWidget)
 import rc_resources
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(800, 600)
+        MainWindow.resize(1086, 845)
         self.actionStart = QAction(MainWindow)
         self.actionStart.setObjectName(u"actionStart")
         self.actionStart.setCheckable(True)
@@ -85,31 +85,31 @@ class Ui_MainWindow(object):
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.verticalLayout_2 = QVBoxLayout()
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.label = QLabel(self.centralwidget)
-        self.label.setObjectName(u"label")
+        self.labelClusters = QLabel(self.centralwidget)
+        self.labelClusters.setObjectName(u"labelClusters")
 
-        self.verticalLayout_2.addWidget(self.label)
+        self.verticalLayout_2.addWidget(self.labelClusters)
 
-        self.tableWidget = QTableWidget(self.centralwidget)
-        if (self.tableWidget.columnCount() < 7):
-            self.tableWidget.setColumnCount(7)
+        self.tableWidgetHost = QTableWidget(self.centralwidget)
+        if (self.tableWidgetHost.columnCount() < 7):
+            self.tableWidgetHost.setColumnCount(7)
         __qtablewidgetitem = QTableWidgetItem()
-        self.tableWidget.setHorizontalHeaderItem(0, __qtablewidgetitem)
+        self.tableWidgetHost.setHorizontalHeaderItem(0, __qtablewidgetitem)
         __qtablewidgetitem1 = QTableWidgetItem()
-        self.tableWidget.setHorizontalHeaderItem(1, __qtablewidgetitem1)
+        self.tableWidgetHost.setHorizontalHeaderItem(1, __qtablewidgetitem1)
         __qtablewidgetitem2 = QTableWidgetItem()
-        self.tableWidget.setHorizontalHeaderItem(2, __qtablewidgetitem2)
+        self.tableWidgetHost.setHorizontalHeaderItem(2, __qtablewidgetitem2)
         __qtablewidgetitem3 = QTableWidgetItem()
-        self.tableWidget.setHorizontalHeaderItem(3, __qtablewidgetitem3)
+        self.tableWidgetHost.setHorizontalHeaderItem(3, __qtablewidgetitem3)
         __qtablewidgetitem4 = QTableWidgetItem()
-        self.tableWidget.setHorizontalHeaderItem(4, __qtablewidgetitem4)
+        self.tableWidgetHost.setHorizontalHeaderItem(4, __qtablewidgetitem4)
         __qtablewidgetitem5 = QTableWidgetItem()
-        self.tableWidget.setHorizontalHeaderItem(5, __qtablewidgetitem5)
+        self.tableWidgetHost.setHorizontalHeaderItem(5, __qtablewidgetitem5)
         __qtablewidgetitem6 = QTableWidgetItem()
-        self.tableWidget.setHorizontalHeaderItem(6, __qtablewidgetitem6)
-        self.tableWidget.setObjectName(u"tableWidget")
+        self.tableWidgetHost.setHorizontalHeaderItem(6, __qtablewidgetitem6)
+        self.tableWidgetHost.setObjectName(u"tableWidgetHost")
 
-        self.verticalLayout_2.addWidget(self.tableWidget)
+        self.verticalLayout_2.addWidget(self.tableWidgetHost)
 
 
         self.horizontalLayout.addLayout(self.verticalLayout_2)
@@ -119,17 +119,23 @@ class Ui_MainWindow(object):
 
         self.verticalLayout = QVBoxLayout()
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.spinBox = QSpinBox(self.centralwidget)
-        self.spinBox.setObjectName(u"spinBox")
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.verticalLayout.addWidget(self.spinBox)
+        self.verticalLayout.addItem(self.verticalSpacer)
 
-        self.horizontalScrollBar = QScrollBar(self.centralwidget)
-        self.horizontalScrollBar.setObjectName(u"horizontalScrollBar")
-        self.horizontalScrollBar.setOrientation(Qt.Orientation.Horizontal)
+        self.treeWidgetDevice = QTreeWidget(self.centralwidget)
+        __qtreewidgetitem = QTreeWidgetItem(self.treeWidgetDevice)
+        QTreeWidgetItem(__qtreewidgetitem)
+        QTreeWidgetItem(__qtreewidgetitem)
+        QTreeWidgetItem(__qtreewidgetitem)
+        __qtreewidgetitem1 = QTreeWidgetItem(__qtreewidgetitem)
+        QTreeWidgetItem(__qtreewidgetitem1)
+        self.treeWidgetDevice.setObjectName(u"treeWidgetDevice")
 
-        self.verticalLayout.addWidget(self.horizontalScrollBar)
+        self.verticalLayout.addWidget(self.treeWidgetDevice)
 
+        self.verticalLayout.setStretch(0, 4)
+        self.verticalLayout.setStretch(1, 56)
 
         self.gridLayout.addLayout(self.verticalLayout, 1, 1, 1, 1)
 
@@ -138,6 +144,8 @@ class Ui_MainWindow(object):
 
         self.gridLayout.addLayout(self.verticalLayout_3, 2, 1, 1, 1)
 
+        self.gridLayout.setColumnStretch(0, 5)
+        self.gridLayout.setColumnStretch(1, 1)
         MainWindow.setCentralWidget(self.centralwidget)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
@@ -164,21 +172,40 @@ class Ui_MainWindow(object):
         self.cluster.setText(QCoreApplication.translate("MainWindow", u"172.30.200.0/24", None))
         self.cluster.setPlaceholderText(QCoreApplication.translate("MainWindow", u"e.g. 172.30.200.0/24", None))
         self.ApplypushButton.setText(QCoreApplication.translate("MainWindow", u"Apply", None))
-        self.label.setText(QCoreApplication.translate("MainWindow", u"Hostname", None))
-        ___qtablewidgetitem = self.tableWidget.horizontalHeaderItem(0)
+        self.labelClusters.setText(QCoreApplication.translate("MainWindow", u"Clusters", None))
+        ___qtablewidgetitem = self.tableWidgetHost.horizontalHeaderItem(0)
         ___qtablewidgetitem.setText(QCoreApplication.translate("MainWindow", u"Status", None))
-        ___qtablewidgetitem1 = self.tableWidget.horizontalHeaderItem(1)
+        ___qtablewidgetitem1 = self.tableWidgetHost.horizontalHeaderItem(1)
         ___qtablewidgetitem1.setText(QCoreApplication.translate("MainWindow", u"icon", None))
-        ___qtablewidgetitem2 = self.tableWidget.horizontalHeaderItem(2)
+        ___qtablewidgetitem2 = self.tableWidgetHost.horizontalHeaderItem(2)
         ___qtablewidgetitem2.setText(QCoreApplication.translate("MainWindow", u"name", None))
-        ___qtablewidgetitem3 = self.tableWidget.horizontalHeaderItem(3)
+        ___qtablewidgetitem3 = self.tableWidgetHost.horizontalHeaderItem(3)
         ___qtablewidgetitem3.setText(QCoreApplication.translate("MainWindow", u"IPv4 Addr", None))
-        ___qtablewidgetitem4 = self.tableWidget.horizontalHeaderItem(4)
+        ___qtablewidgetitem4 = self.tableWidgetHost.horizontalHeaderItem(4)
         ___qtablewidgetitem4.setText(QCoreApplication.translate("MainWindow", u"Ping", None))
-        ___qtablewidgetitem5 = self.tableWidget.horizontalHeaderItem(5)
+        ___qtablewidgetitem5 = self.tableWidgetHost.horizontalHeaderItem(5)
         ___qtablewidgetitem5.setText(QCoreApplication.translate("MainWindow", u"MAC Addr", None))
-        ___qtablewidgetitem6 = self.tableWidget.horizontalHeaderItem(6)
+        ___qtablewidgetitem6 = self.tableWidgetHost.horizontalHeaderItem(6)
         ___qtablewidgetitem6.setText(QCoreApplication.translate("MainWindow", u"NIC Vendor", None))
+        ___qtreewidgetitem = self.treeWidgetDevice.headerItem()
+        ___qtreewidgetitem.setText(0, QCoreApplication.translate("MainWindow", u"device", None))
+
+        __sortingEnabled = self.treeWidgetDevice.isSortingEnabled()
+        self.treeWidgetDevice.setSortingEnabled(False)
+        ___qtreewidgetitem1 = self.treeWidgetDevice.topLevelItem(0)
+        ___qtreewidgetitem1.setText(0, QCoreApplication.translate("MainWindow", u"fdsfs", None))
+        ___qtreewidgetitem2 = ___qtreewidgetitem1.child(0)
+        ___qtreewidgetitem2.setText(0, QCoreApplication.translate("MainWindow", u"New Subitem", None))
+        ___qtreewidgetitem3 = ___qtreewidgetitem1.child(1)
+        ___qtreewidgetitem3.setText(0, QCoreApplication.translate("MainWindow", u"New Item", None))
+        ___qtreewidgetitem4 = ___qtreewidgetitem1.child(2)
+        ___qtreewidgetitem4.setText(0, QCoreApplication.translate("MainWindow", u"New Item", None))
+        ___qtreewidgetitem5 = ___qtreewidgetitem1.child(3)
+        ___qtreewidgetitem5.setText(0, QCoreApplication.translate("MainWindow", u"New Item", None))
+        ___qtreewidgetitem6 = ___qtreewidgetitem5.child(0)
+        ___qtreewidgetitem6.setText(0, QCoreApplication.translate("MainWindow", u"New Subitem", None))
+        self.treeWidgetDevice.setSortingEnabled(__sortingEnabled)
+
         self.toolBar.setWindowTitle(QCoreApplication.translate("MainWindow", u"toolBar", None))
     # retranslateUi
 
