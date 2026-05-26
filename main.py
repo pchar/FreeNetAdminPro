@@ -6,23 +6,30 @@ Wires the Qt UI to the async MCP client:
   - icon toggles: green connected / red not_connected
   - all MCP calls logged to textEdit
   - scan_network called via worker thread, results streamed back via signals
+
+Logging uses logger.py — 3 levels:
+  INFO   — high-level phase descriptions
+  DEBUG  — deep traces with input/output parameters
+  TRACE  — every instruction line-by-line
 """
 
 import sys
 import asyncio
-import logging
 import json
 import ipaddress
-from datetime import datetime
-
+import threading
 from typing import Optional
 from PySide6.QtWidgets import QApplication, QMainWindow, QTableWidgetItem
 from PySide6.QtCore import QObject, Signal, QThread, Slot, Qt
 from PySide6.QtGui import QPixmap, QIcon
-from PySide6.QtSvg import QSvgRenderer  # ensure SVG renderer plugin is loaded
+from PySide6.QtSvg import QSvgRenderer
 
 from ui_form import Ui_MainWindow
 from mcp_handler import MCPClient
+from logger import get_logger, set_thread_nick
+
+gui_log = get_logger("GUI")
+
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -130,69 +137,74 @@ IOS_PATTERNS = ["iphone", "ipad", "ipod", "macbook", "imac", "mac mini"]
 IOT_VENDORS = ["bosch", "siemens", "miele", "viessmann", "netatmo", "ezviz", "ring", "nest", "tplink", "kasa", "sonoff"]
 
 
+class _classify_logger:
+    """Logger instance scoped to classify_device — avoids reimport."""
+    inst = None
+
+    @classmethod
+    def get(cls):
+        if cls.inst is None:
+            cls.inst = get_logger("main.classify_device")
+        return cls.inst
+
+
 def classify_device(vendor: str, hostname: str) -> str:
     """Classify device type and return icon key.
-    
+
     Uses vendor name and hostname to infer device type.
     Returns one of: 'apple', 'windows', 'linux', 'android', 'ios',
                     'server', 'network', 'unknown'
     """
     vendor_lower = (vendor or "").lower()
     host_lower = (hostname or "").lower()
-
-    # Debug: log classification inputs only for unknown matches or first pass
-    _classification_count = getattr(classify_device, '_count', 0) + 1
-    classify_device._count = _classification_count
-    if _classification_count <= 1:
-        _debug_log(f"[classify_device] Starting classification ({vendor!r}, {hostname!r})")
+    log = _classify_logger.get()
 
     # 1. Check for Apple products (vendor-based, highest priority)
+    log.trace("classify: checking APPLE_VENDORS …")
     for kw in APPLE_VENDORS:
         if kw in vendor_lower:
-            result = "apple"
-            _debug_log(f"[classify_device] ✓ Apple vendor match: '{kw}' in vendor")
-            return result
+            log.debug("Apple vendor match: '%s' in vendor=%r", kw, vendor)
+            return "apple"
 
     # 2. Check hostname for Apple devices
+    log.trace("classify: checking IOS_PATTERNS in hostname …")
     for kw in IOS_PATTERNS:
         if kw in host_lower:
-            result = "ios"
-            _debug_log(f"[classify_device] ✓ iOS hostname match: '{kw}' in hostname")
-            return result
+            log.debug("iOS hostname match: '%s' in host=%r", kw, hostname)
+            return "ios"
 
     # 3. Check hostname for Windows devices
+    log.trace("classify: checking WINDOWS_PATTERNS in hostname …")
     for kw in WINDOWS_PATTERNS:
         if kw in host_lower:
-            result = "windows"
-            _debug_log(f"[classify_device] ✓ Windows hostname match: '{kw}' in hostname")
-            return result
+            log.debug("Windows hostname match: '%s' in host=%r", kw, hostname)
+            return "windows"
 
     # 4. Check hostname for Linux servers
+    log.trace("classify: checking SERVER_PATTERNS in hostname …")
     for kw in SERVER_PATTERNS:
         if kw in host_lower:
-            result = "server"
-            _debug_log(f"[classify_device] ✓ Server hostname match: '{kw}' in hostname")
-            return result
+            log.debug("Server hostname match: '%s' in host=%r", kw, hostname)
+            return "server"
 
     # 5. Check vendor for known Linux/Server hardware
+    log.trace("classify: checking LINUX_VENDORS in vendor …")
     for kw in LINUX_VENDORS:
         if kw in vendor_lower:
-            # Server manufacturers → server icon
+            # Server manufacturers -> server icon
             if any(s in vendor_lower for s in ["dell", "hpe", "hp inc", "lenovo", "ibm", "super micro", "raspberry pi"]):
-                result = "server"
-                _debug_log(f"[classify_device] ✓ Server vendor match: '{kw}' in vendor")
-                return result
+                log.debug("Server vendor match: '%s' in vendor=%r", kw, vendor)
+                return "server"
             # Network equipment
             if any(n in vendor_lower for n in ["cisco", "juniper", "arista", "mikrotik", "ubiquiti", "fortinet"]):
-                result = "network"
-                _debug_log(f"[classify_device] ✓ Network vendor match: '{kw}' in vendor")
-                return result
+                log.debug("Network vendor match: '%s' in vendor=%r", kw, vendor)
+                return "network"
             # Otherwise regular Linux device
-            result = "linux"
-            _debug_log(f"[classify_device] ✓ Linux vendor match: '{kw}' in vendor")
-            return result
+            log.debug("Linux vendor match: '%s' in vendor=%r", kw, vendor)
+            return "linux"
 
     # 6. IoT/home devices - often have vendor='Unknown' but identifiable hostnames
+    log.trace("classify: checking IOT patterns in hostname …")
     iot_patterns = [
         # Smart home brands
         "bosch", "siemens", "miele", "viessmann", "netatmo",
@@ -209,12 +221,11 @@ def classify_device(vendor: str, hostname: str) -> str:
     ]
     for kw in iot_patterns:
         if kw in host_lower:
-            result = "server"  # IoT devices share server icon
-            _debug_log(f"[classify_device] ✓ IoT hostname match: '{kw}' in hostname")
-            return result
+            log.debug("IoT hostname match: '%s' in host=%r", kw, hostname)
+            return "server"  # IoT devices share server icon
 
-    # 7. Linux workstations/servers with vendor='Unknown' - common hostname patterns
-    #    Many Linux systems don't report vendor, but hostnames reveal them
+    # 7. Linux workstations/servers with vendor='Unknown'
+    log.trace("classify: checking LINUX patterns in hostname …")
     linux_patterns = [
         # Distribution identifiers
         "arch", "gentoo", "fedora", "ubuntu", "debian", "centos", "rhel", "opensuse",
@@ -236,28 +247,20 @@ def classify_device(vendor: str, hostname: str) -> str:
     ]
     for kw in linux_patterns:
         if kw in host_lower:
-            result = "linux"
-            _debug_log(f"[classify_device] ✓ Linux hostname match: '{kw}' in hostname")
-            return result
+            log.debug("Linux hostname match: '%s' in host=%r", kw, hostname)
+            return "linux"
 
-    # 8. Mobile devices often have vendor names like "Apple", "Samsung", etc.
-    #    Check mobile vendor patterns (fallback)
+    # 8. Mobile devices
+    log.trace("classify: checking MOBILE_VENDORS in vendor …")
     mobile_vendors = ["samsung", "huawei", "xiaomi", "oppo", "vivo", "oneplus", "nokia", "lg electronics"]
     for kw in mobile_vendors:
         if kw in vendor_lower:
-            result = "android"
-            _debug_log(f"[classify_device] ✓ Android vendor match: '{kw}' in vendor")
-            return result
+            log.debug("Android vendor match: '%s' in vendor=%r", kw, vendor)
+            return "android"
 
-    # 9. Default — assume generic network device
-    _debug_log("[classify_device] ⚠ No match — defaulting to 'unknown'")
+    # 9. Default
+    log.debug("No match -> defaulting to 'unknown' (vendor=%r, host=%r)", vendor, hostname)
     return "unknown"
-
-
-def _debug_log(msg: str):
-    """Log a debug message to stdout (will appear in console during dev)."""
-    ts = datetime.now().strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}")
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -283,29 +286,43 @@ class MCPWorker(QObject):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._scan_in_progress = False
 
+        # Per-instance logger with thread nick
+        self._log = get_logger("MCPWorker")
+
+    def _get_nick(self) -> str:
+        """Return a short identifier for this thread."""
+        return str(threading.current_thread().ident)[-4:] if threading.current_thread().ident else "???"
+
     # ── Connection ──────────────────────────────────────────────────────
 
     @Slot()
     def connect(self):
-        self._log(f"[MCP] Connecting to {self._base_url} ...")
+        nick = self._get_nick()
+        set_thread_nick(f"Worker/{nick}")
+        self._log.info("Connecting to %s", self._base_url)
+        self._log.trace("connect: creating MCPClient(session=%r)", self._base_url)
         result = self._run_sync(self._do_connect())
         if result:
             self._connected = True
             self.status_signal.emit(True, "Connected to MCP server")
-            self._log("[MCP] ✓ Connected")
+            self._log.info("Connected")
+            self._log.trace("connect: _connected=True, status_signal emitted")
         else:
             self._connected = False
             self.status_signal.emit(False, "Connection failed")
-            self._log("[MCP] ✗ Connection failed")
+            self._log.info("Connection failed")
+            self._log.trace("connect: _connected=False, status_signal emitted")
 
     @Slot()
     def disconnect(self):
-        self._log("[MCP] Disconnecting ...")
+        self._log.info("Disconnecting")
+        self._log.trace("disconnect: calling _do_disconnect()")
         if self._client:
             self._run_sync(self._do_disconnect())
         self._connected = False
         self.status_signal.emit(False, "Disconnected")
-        self._log("[MCP] ✓ Disconnected")
+        self._log.info("Disconnected")
+        self._log.trace("disconnect: _connected=False, status_signal emitted")
 
     # ── MCP tool calls ──────────────────────────────────────────────────
 
@@ -317,53 +334,67 @@ class MCPWorker(QObject):
         scan_complete_signal(count) — keeps the event loop alive so the
         GUI never freezes.
         """
+        self._log.trace("scan_network: entry")
         if self._scan_in_progress:
-            self._log("[MCP] ✗ scan_network — scan already in progress, ignoring")
+            self._log.info("scan_network aborted — scan already in progress")
+            self._log.trace("scan_network: _scan_in_progress=True, returning")
             return
 
         if not self._client:
-            self._log("[MCP] ✗ scan_network — not connected")
+            self._log.info("scan_network aborted — not connected")
+            self._log.trace("scan_network: _client is None")
             self.status_signal.emit(False, "Not connected — cannot scan")
             return
 
         self._scan_in_progress = True
-        self._log("[MCP] → scan_network starting")
+        self._log.info("scan_network starting")
+        self._log.trace("scan_network: _scan_in_progress=True")
         self.status_signal.emit(True, "Scanning network...")
         self.scan_started_signal.emit()
 
         try:
             # Call MCP tool
+            params = {"subnet": "", "resolve_names": True}
+            self._log.debug("scan_network: calling _call_tool(tool=scan_network, params=%s)", params)
+            self._log.trace("scan_network: _run_sync(_call_tool(...))")
             result = self._run_sync(self._client._call_tool(
-                "scan_network", {"subnet": "", "resolve_names": True}
+                "scan_network", params
             ))
+            self._log.debug("scan_network: got result keys=%s", list(result.keys()))
             result["method_name"] = "scan_network"
 
             ok = result.get("success", False)
             if not ok:
                 err = result.get("error", "unknown error")
-                self._log(f"[MCP] ← scan_network failed: {err}")
+                self._log.info("scan_network failed: %s", err)
+                self._log.trace("scan_network: success=False, emitting result_signal")
                 self.status_signal.emit(False, f"Scan failed: {err}")
                 self.result_signal.emit(result)
                 return
 
-            self._log(f"[MCP] ← scan_network OK — parsing {len(result.get('devices', []))} devices")
-
             devices = result.get("devices", [])
             total = len(devices)
+            self._log.info("scan_network OK — %d devices", total)
+            self._log.debug("scan_network: parsing %d devices", total)
+            self._log.trace("scan_network: entering device emit loop")
 
             # Emit per-device signals (Qt event loop processes each between iterations)
             for row, dev in enumerate(devices):
+                self._log.trace("scan_network: device_signal.emit(row=%d, dev=%s)", row, dev.get("ip"))
                 self.device_signal.emit(row, dev)
 
             # Signal completion
+            self._log.trace("scan_network: scan_complete_signal.emit(total=%d)", total)
             self.scan_complete_signal.emit(total)
             self.status_signal.emit(True, f"Scan complete: {total} devices")
-            self._log(f"[MCP] ✓ scan_network complete: {total} devices")
+            self._log.info("scan_network complete: %d devices", total)
 
             # Also emit legacy result_signal for backwards compatibility
+            self._log.trace("scan_network: result_signal.emit(legacy)")
             self.result_signal.emit(result)
         finally:
             # Always reset the guard — even if _run_sync or signal emission raises
+            self._log.trace("scan_network: finally — _scan_in_progress=False")
             self._scan_in_progress = False
 
     @Slot()
@@ -416,19 +447,21 @@ class MCPWorker(QObject):
 
         Delegate to scan_network() so the signal-per-item pattern
         (device_signal / scan_complete_signal / scan_started_signal)
-        is followed.  _call() only emits result_signal — that's for
-        legacy non-scan tools and does NOT populate the table.
+        is followed.
         """
-        self._log("[MCP] discover_network → forwarding to scan_network")
+        self._log.info("discover_network -> forwarding to scan_network")
+        self._log.trace("discover_network: entry, _client=%s", self._client is not None)
         if not self._client:
-            self._log("[MCP] ✗ discover_network - no client")
+            self._log.info("discover_network - no client")
             self.status_signal.emit(False, "No MCP client")
+            self._log.trace("discover_network: _client is None, emitting error")
             self.result_signal.emit({
                 "success": False, "error": "No MCP client",
                 "method_name": "discover_network"
             })
             return
         # Reuse scan_network() which has the full signal-per-item pipeline
+        self._log.trace("discover_network: delegating to scan_network()")
         self.scan_network()
 
     @Slot()
@@ -439,29 +472,33 @@ class MCPWorker(QObject):
 
     def _run_sync(self, coro):
         """Run an async coroutine on this worker's event loop."""
+        self._log.trace("_run_sync: loop=%s", "open" if self._loop and not self._loop.is_closed() else "closed")
         if self._loop is None or self._loop.is_closed():
             self._loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._loop)
+            self._log.trace("_run_sync: created new event loop")
         return self._loop.run_until_complete(coro)
 
     async def _do_connect(self) -> bool:
+        self._log.trace("_do_connect: creating MCPClient(%s)", self._base_url)
         self._client = MCPClient(self._base_url)
         ok = await self._client.connect()
+        self._log.debug("_do_connect: connect() returned %s", ok)
         return ok
 
     async def _do_disconnect(self):
+        self._log.trace("_do_disconnect: entry")
         if self._client:
+            self._log.trace("_do_disconnect: calling client.disconnect()")
             await self._client.disconnect()
             self._client = None
-
-    def _log(self, msg: str):
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.log_signal.emit(f"[{ts}] {msg}")
+            self._log.trace("_do_disconnect: client set to None")
 
     def _call(self, method_name: str, params: dict):
         """Helper: log the call, await the result, log the result, re-emit status."""
+        self._log.trace("_call(%s, %s)", method_name, params)
         if not self._client:
-            self._log(f"[MCP] ✗ {method_name} — not connected")
+            self._log.info("_call(%s) aborted — not connected", method_name)
             self.status_signal.emit(False, "Not connected — cannot call tools")
             self.result_signal.emit({
                 "success": False, "error": "Not connected",
@@ -469,19 +506,24 @@ class MCPWorker(QObject):
             })
             return
 
-        self._log(f"[MCP] → {method_name}({params})")
+        self._log.info("Calling tool %s", method_name)
+        self._log.debug("_call(%s) params=%s", method_name, params)
+        self._log.trace("_call: _run_sync(_client._call_tool(...))")
         result = self._run_sync(self._client._call_tool(method_name, params))
 
         ok = result.get("success", False)
         if ok:
-            self._log(f"[MCP] ← {method_name} OK")
+            self._log.info("Tool %s succeeded", method_name)
+            self._log.debug("_call(%s): result keys=%s", method_name, list(result.keys()))
             self.status_signal.emit(True, f"{method_name}: success")
         else:
             err = result.get("error", "unknown error")
-            self._log(f"[MCP] ← {method_name} failed: {err}")
+            self._log.info("Tool %s failed: %s", method_name, err)
+            self._log.debug("_call(%s) failed: error=%s", method_name, err)
             self.status_signal.emit(False, f"{method_name}: {err}")
 
         # Always emit the parsed result so the main thread can display it
+        self._log.trace("_call: result_signal.emit(method=%s)", method_name)
         result["method_name"] = method_name
         self.result_signal.emit(result)
 
@@ -496,16 +538,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         self.setupUi(self)
+        gui_log.info("MainWindow.__init__ starting")
+        gui_log.trace("__init__: setupUi(self)")
 
         # ── Wire UI controls ────────────────────────────────────────────
+        gui_log.trace("__init__: wiring pushButton_mcp.clicked -> _on_mcp_button")
         self.pushButton_mcp.clicked.connect(self._on_mcp_button)
         self.pushButton_mcp.setCheckable(True)
         self.pushButton_mcp.setChecked(False)
         self.pushButton_mcp.setText("Connect")
+        gui_log.trace("__init__: wiring pushButton_discover.clicked -> _on_discover_button")
         self.pushButton_discover.clicked.connect(self._on_discover_button)
         self.pushButton_discover.setEnabled(False)  # disabled until connected
 
         # ── Enable column sorting ───────────────────────────────────────
+        gui_log.trace("__init__: tableWidgetHost sorting disabled during init")
         self.tableWidgetHost.setSortingEnabled(False)  # turn off during batch update
         self.tableWidgetHost.horizontalHeader().setSortIndicator(0, Qt.AscendingOrder)
         self.tableWidgetHost.horizontalHeader().setSortIndicatorShown(True)
@@ -529,7 +576,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self._worker: Optional[MCPWorker] = None
 
         self._set_status_icon(False)
+        gui_log.info("FreeNetAdminPro started")
+        gui_log.debug("__init__: label_mcp_status=not_connected")
         self._append_log("[System] FreeNetAdminPro started")
+        gui_log.debug("__init__: user hint logged")
         self._append_log("[System] Click 'connect' on the MCP button to start")
 
     def _ensure_thread(self):
@@ -548,10 +598,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def _on_mcp_button(self):
         """Toggle connect / disconnect when pushButton_mcp is clicked."""
+        gui_log.trace("_on_mcp_button: isChecked=%s", self.pushButton_mcp.isChecked())
         if self.pushButton_mcp.isChecked():
             # → Connect
             url = self.lineEdit_mcp.text().strip()
+            gui_log.debug("_on_mcp_button: lineEdit_mcp.text()=%r", url)
             if not url:
+                gui_log.info("Connect failed — MCP URL is empty")
                 self._append_log("[UI] ✗ MCP URL is empty")
                 self.pushButton_mcp.setChecked(False)
                 self._set_status_icon(False)
@@ -559,44 +612,61 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 return
 
             self.pushButton_mcp.setText("Disconnect")
+            gui_log.info("Connect requested → %s", url)
             self._append_log(f"[UI] Connect requested → {url}")
 
             # Destroy previous worker and create a new one
+            gui_log.trace("_on_mcp_button: _cleanup_worker()")
             self._cleanup_worker()
             thread = self._ensure_thread()
+            gui_log.trace("_on_mcp_button: creating MCPWorker(%s)", url)
             self._worker = MCPWorker(url)
             self._worker.moveToThread(thread)
 
             # Wire signals
+            gui_log.trace("_on_mcp_button: connecting log_signal -> _append_log")
             self._worker.log_signal.connect(self._append_log)
+            gui_log.trace("_on_mcp_button: connecting status_signal -> _on_worker_status")
             self._worker.status_signal.connect(self._on_worker_status)
+            gui_log.trace("_on_mcp_button: connecting result_signal -> _on_worker_result")
             self._worker.result_signal.connect(self._on_worker_result)
+            gui_log.trace("_on_mcp_button: connecting device_signal -> _on_device_received")
             self._worker.device_signal.connect(self._on_device_received)
+            gui_log.trace("_on_mcp_button: connecting scan_complete_signal -> _on_scan_complete")
             self._worker.scan_complete_signal.connect(self._on_scan_complete)
+            gui_log.trace("_on_mcp_button: connecting scan_started_signal -> _on_scan_started")
             self._worker.scan_started_signal.connect(self._on_scan_started)
 
             # Start the thread and fire connect
+            gui_log.trace("_on_mcp_button: thread.start()")
             assert thread is not None
             thread.start()
+            gui_log.trace("_on_mcp_button: worker.connect()")
             self._worker.connect()
         else:
             # → Disconnect
+            gui_log.info("Disconnect requested")
             self.pushButton_mcp.setText("Connect")
             self._append_log("[UI] Disconnect requested")
             if self._worker:
+                gui_log.trace("_on_mcp_button: worker.disconnect()")
                 self._worker.disconnect()
             else:
+                gui_log.info("Disconnect requested — but not connected")
                 self._append_log("[UI] ✗ Not connected")
                 self.pushButton_mcp.setChecked(True)
                 self.pushButton_mcp.setText("Disconnect")
+            gui_log.trace("_on_mcp_button: _cleanup_worker()")
             self._cleanup_worker()
             if self._worker_thread is not None and self._worker_thread.isRunning():
+                gui_log.trace("_on_mcp_button: worker_thread.quit() + wait()")
                 self._worker_thread.quit()
                 self._worker_thread.wait()
 
     @Slot(bool, str)
     def _on_worker_status(self, connected: bool, message: str):
         """Handle status updates from the worker thread."""
+        gui_log.trace("_on_worker_status: connected=%s, message=%r", connected, message)
         self._set_status_icon(connected)
         self.pushButton_mcp.setChecked(connected)
         self.pushButton_mcp.setText("Disconnect" if connected else "Connect")
@@ -611,6 +681,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     @Slot()
     def _on_scan_started(self):
         """Handle scan start — disable button, show status, clear old rows."""
+        gui_log.info("Scan started")
+        gui_log.trace("_on_scan_started: _is_scanning=True, button disabled")
         self._is_scanning = True
         self.pushButton_discover.setEnabled(False)
         self.statusbar.showMessage("Scanning network...", 0)
@@ -620,6 +692,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def _on_worker_result(self, result: dict):
         """Legacy handler — kept for non-scan tools (info, ports, etc.)."""
         method_name = result.get("method_name", "")
+        gui_log.debug("Received result: %s, keys=%s", method_name,
+                      list(result.keys()) if isinstance(result, dict) else type(result))
         self._append_log(f"[UI] Received result: {method_name} -> "
                          f"{list(result.keys()) if isinstance(result, dict) else type(result)}")
         # scan_network is now handled by device_signal / scan_complete_signal
@@ -635,104 +709,100 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         """
         # ── First call: preload icons & prepare table ─────────────────
         if row == 0 and self._scan_rows_ready == 0:
+            gui_log.info("Preloading icons & preparing table")
             self._scan_devices_used.clear()
             self._scan_devices_classified.clear()
             self._scan_rows_ready = 0
             self._scan_total_devices = 0
             self._icon_cache.clear()
 
+            gui_log.debug("Preloading %d icons from DEVICE_ICONS", len(DEVICE_ICONS))
             self._append_log("[UI] Preloading icons...")
             for dtype, icon_path in DEVICE_ICONS.items():
+                gui_log.trace("_on_device_received: load icon %s (%s)", icon_path, dtype)
                 pm = QPixmap(icon_path)
                 if pm.isNull():
-                    _debug_log(f"[icon] ✗ FAILED to load {icon_path} ({dtype})")
+                    gui_log.warning("Failed to load icon %s (%s)", icon_path, dtype)
                     self._append_log(f"[UI] ✗ Icon FAILED: {icon_path}")
                 else:
                     self._icon_cache[icon_path] = QIcon(pm)
-                    _debug_log(f"[icon] ✓ Loaded {icon_path}")
+                    gui_log.debug("Icon loaded: %s (%s)", icon_path, dtype)
                     self._append_log(f"[UI] ✓ Icon loaded: {icon_path}")
 
-            _debug_log(f"[icon] Preloaded {len(self._icon_cache)} icons")
+            gui_log.info("Preloaded %d icons", len(self._icon_cache))
             self._append_log(f"[UI] Preloaded {len(self._icon_cache)} icons")
 
             # Clear table & freeze updates
+            gui_log.trace("_on_device_received: tableWidgetHost.setSortingEnabled(False)")
             self.tableWidgetHost.setSortingEnabled(False)
+            gui_log.trace("_on_device_received: tableWidgetHost.setUpdatesEnabled(False)")
             self.tableWidgetHost.setUpdatesEnabled(False)
+            gui_log.trace("_on_device_received: tableWidgetHost.setRowCount(0)")
             self.tableWidgetHost.setRowCount(0)
-            self._append_log(f"[UI] Parsing scan result: ready for devices")
-
-        # ── Debug: print device dict ──────────────────────────────────
-        self._append_log(f"[SCAN] Row {row} device dict:")
-        self._append_log(f"     {json.dumps(dev, indent=6)}")
+            gui_log.debug("Ready to receive %d devices", self._scan_total_devices)
+            self._append_log("[UI] Parsing scan result: ready for devices")
 
         # ── Insert ONE row (main thread, non-blocking) ────────────────
+        gui_log.trace("_on_device_received: insertRow(%d)", row)
         self.tableWidgetHost.insertRow(row)
 
         # Col 0: Status ●
-        _debug_log("[col 0] Status → ●")
+        gui_log.trace("_on_device_received: col0 — QTableWidgetItem('●')")
         it = QTableWidgetItem("●")
         it.setForeground(Qt.GlobalColor.darkGreen)
         it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self.tableWidgetHost.setItem(row, 0, it)
-        _debug_log("[col 0] DONE")
 
         # Col 1: device icon
         vendor = dev.get("vendor", "") or ""
         hostname = dev.get("hostname") or ""
-        _debug_log(f"[col 1] vendor='{vendor}', hostname='{hostname}'")
+        gui_log.debug("_on_device_received: col1 — vendor=%r, hostname=%r", vendor, hostname)
         dtype = classify_device(vendor, hostname)
         icon_path = DEVICE_ICONS.get(dtype, DEVICE_ICONS["unknown"])
+        gui_log.trace("_on_device_received: classified as %s, icon=%s", dtype, icon_path)
         self._scan_devices_used.add(icon_path)
         self._scan_devices_classified.append(dtype)
-        _debug_log(f"[col 1] classified → {dtype}, icon={icon_path}")
         it = QTableWidgetItem()
         it.setIcon(self._icon_cache.get(icon_path, self._icon_cache.get(DEVICE_ICONS["unknown"])))
         it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self.tableWidgetHost.setItem(row, 1, it)
-        _debug_log("[col 1] DONE")
 
         # Col 2: name
         name = dev.get("hostname") or dev.get("mac") or "Unknown"
-        _debug_log(f"[col 2] name → '{name}'")
+        gui_log.debug("_on_device_received: col2 — name=%r", name)
         it = QTableWidgetItem(name)
         it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self.tableWidgetHost.setItem(row, 2, it)
-        _debug_log("[col 2] DONE")
 
         # Col 3: IPv4
         ip_val = dev.get("ip", "N/A")
-        _debug_log(f"[col 3] ip → '{ip_val}'")
+        gui_log.debug("_on_device_received: col3 — ip=%r", ip_val)
         it = IPTableWidgetItem(str(ip_val))
         it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self.tableWidgetHost.setItem(row, 3, it)
-        _debug_log("[col 3] DONE")
 
         # Col 4: Ping
-        _debug_log("[col 4] ping → 'N/A' (placeholder)")
+        gui_log.trace("_on_device_received: col4 — 'N/A' placeholder")
         it = QTableWidgetItem("N/A")
         it.setForeground(Qt.GlobalColor.gray)
         it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self.tableWidgetHost.setItem(row, 4, it)
-        _debug_log("[col 4] DONE")
 
         # Col 5: MAC
         mac_val = dev.get("mac", "N/A")
-        _debug_log(f"[col 5] mac → '{mac_val}' (type={type(mac_val).__name__})")
+        gui_log.debug("_on_device_received: col5 — mac=%r (type=%s)", mac_val, type(mac_val).__name__)
         it = QTableWidgetItem(str(mac_val))
         it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self.tableWidgetHost.setItem(row, 5, it)
-        _debug_log("[col 5] DONE")
 
         # Col 6: Vendor
         vendor_val = dev.get("vendor", "Unknown")
-        _debug_log(f"[col 6] vendor → '{vendor_val}'")
+        gui_log.debug("_on_device_received: col6 — vendor=%r", vendor_val)
         it = QTableWidgetItem(str(vendor_val))
         it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsSelectable)
         self.tableWidgetHost.setItem(row, 6, it)
-        _debug_log("[col 6] DONE")
 
-        _debug_log(f"[row {row}] ████████████████ COMPLETE ████████████████")
-
+        gui_log.trace("_on_device_received: row %d COMPLETE", row)
         self._scan_rows_ready += 1
 
     @Slot(int)
@@ -741,34 +811,42 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         Called on the main thread after all device_signal emissions.
         """
+        gui_log.info("Scan complete: %d devices", total)
         self._scan_total_devices = total
         self._append_log(f"[UI] Populated table with {total} devices")
         self.statusbar.showMessage(f"Discovered {total} devices", 5000)
 
         # Debug summary
+        gui_log.debug("Icon cache: %d loaded, icons used: %s", len(self._icon_cache), self._scan_devices_used)
         self._append_log(f"[UI] 🔍 Icon cache: {len(self._icon_cache)} loaded")
         self._append_log(f"[UI] 🔍 Icons used by devices: {self._scan_devices_used}")
 
         unused = set(DEVICE_ICONS.keys()) - set(self._scan_devices_classified)
         if unused:
+            gui_log.info("Icon types never triggered: %s", unused)
             self._append_log(f"[UI] ⚠ Icon types never triggered: {unused}")
             self._append_log("[UI]   → Run 'python -m pytest tests/ -v' to verify all icons load")
 
         # Re-enable sorting and painting
+        gui_log.trace("_on_scan_complete: re-enable sorting + updates")
         self.tableWidgetHost.setSortingEnabled(True)
         self.tableWidgetHost.setUpdatesEnabled(True)
         self.tableWidgetHost.repaint()
 
         # Clear scanning state — re-enable discover button
+        gui_log.trace("_on_scan_complete: _is_scanning=False, button enabled")
         self._is_scanning = False
         self.pushButton_discover.setEnabled(True)
 
     def _on_discover_button(self):
         """Handle discover button click — starts a non-blocking scan."""
+        gui_log.trace("_on_discover_button: worker=%s, enabled=%s",
+                       self._worker is not None, self.pushButton_discover.isEnabled())
         if not self._worker or not self.pushButton_discover.isEnabled():
             return
 
         # Mark scanning, disable button, show status in statusbar
+        gui_log.info("Discover button clicked — starting scan_network")
         self._is_scanning = True
         self.pushButton_discover.setEnabled(False)
         self.statusbar.showMessage("Scanning network...", 0)
@@ -777,6 +855,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def _set_status_icon(self, connected: bool):
         """Toggle the MCP status icon label."""
+        gui_log.trace("_set_status_icon: connected=%s -> pixmap=%s", connected,
+                      "connected.svg" if connected else "not_connected.svg")
         if connected:
             self.label_mcp_status.setPixmap(QPixmap(":/icons/connected.svg"))
         else:
@@ -788,7 +868,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def _cleanup_worker(self):
         """Destroy the current worker and reset reference."""
+        gui_log.trace("_cleanup_worker: worker=%s", self._worker is not None)
         if self._worker is not None:
+            gui_log.debug("_cleanup_worker: deleting worker via deleteLater()")
             self._worker.deleteLater()
             self._worker = None
 

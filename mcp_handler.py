@@ -8,13 +8,18 @@ Protocol: FastMCP HTTP transport uses Server-Sent Events (SSE).
   1. POST /mcp with initialize payload → server returns SSE stream + mcp-session-id header
   2. Subsequent calls use the same session ID (handled internally)
   3. SSE responses must be parsed from the text/event-stream format
+
+Logging: 3-level structured logger (INFO/DEBUG/TRACE).
 """
 
 import json
 import asyncio
-import re
 import aiohttp
 from typing import Optional, Dict, Any, List
+
+from logger import get_logger
+
+_mcp_log = get_logger("MCPClient")
 
 
 def _parse_response(text: str) -> List[Dict[str, Any]]:
@@ -157,12 +162,14 @@ class MCPClient:
         if not self._session:
             raise RuntimeError("Not connected. Call connect() first.")
 
+        _mcp_log.trace("_call_tool(%s, %s)", tool_name, params)
         payload = {
             'jsonrpc': '2.0',
             'method': 'tools/call',
             'params': {'name': tool_name, 'arguments': params},
             'id': 9999,
         }
+        _mcp_log.debug("POST %s/mcp session=%s", self.base_url, self._session_id)
         headers = {
             'Accept': 'application/json, text/event-stream',
             'Content-Type': 'application/json',
@@ -170,24 +177,28 @@ class MCPClient:
         if self._session_id:
             headers['Mcp-Session-Id'] = self._session_id
         try:
+            _mcp_log.trace("_call_tool: session.post() → reading response")
             async with self._session.post(
                 f"{self.base_url}/mcp",
                 json=payload,
                 headers=headers,
             ) as resp:
                 text = await resp.text()
-                # Debug: log raw response length and first 200 chars
-                print(f"[DEBUG] _call_tool({tool_name}) HTTP {resp.status}, response len={len(text)}")
-                print(f"[DEBUG] Response preview: {text[:200]}")
+                _mcp_log.debug("HTTP %d, response len=%d", resp.status, len(text))
+                if text:
+                    _mcp_log.trace("Response preview (first 200 chars): %s", text[:200])
                 msgs = _parse_response(text)
-                print(f"[DEBUG] Parsed {len(msgs)} messages")
+                _mcp_log.debug("Parsed %d messages", len(msgs))
                 if not msgs:
+                    _mcp_log.info("_call_tool(%s) failed: empty response", tool_name)
                     return {
                         "success": False,
                         "error": f"Empty response from server (HTTP {resp.status})\nRaw: {text[:500]}",
                     }
+                _mcp_log.trace("_call_tool: msgs[0] keys=%s", list(msgs[0].keys()))
                 msg = msgs[0]
                 if 'error' in msg:
+                    _mcp_log.info("_call_tool(%s) MCP error: %s", tool_name, msg['error'].get('message'))
                     return {
                         "success": False,
                         "error": msg['error'].get('message', 'Unknown MCP error'),
@@ -201,8 +212,11 @@ class MCPClient:
                     text_str = content
                 else:
                     text_str = json.dumps(content)
-                return json.loads(text_str)
+                parsed = json.loads(text_str)
+                _mcp_log.debug("_call_tool(%s) success: result keys=%s", tool_name, list(parsed.keys()))
+                return parsed
         except Exception as e:
+            _mcp_log.info("_call_tool(%s) exception: %s", tool_name, e)
             return {"success": False, "error": str(e)}
 
     # ─── Device Discovery ───────────────────────────────────────────────
