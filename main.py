@@ -281,6 +281,7 @@ class MCPWorker(QObject):
         self._client: Optional[MCPClient] = None
         self._connected = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._scan_in_progress = False
 
     # ── Connection ──────────────────────────────────────────────────────
 
@@ -316,45 +317,54 @@ class MCPWorker(QObject):
         scan_complete_signal(count) — keeps the event loop alive so the
         GUI never freezes.
         """
+        if self._scan_in_progress:
+            self._log("[MCP] ✗ scan_network — scan already in progress, ignoring")
+            return
+
         if not self._client:
             self._log("[MCP] ✗ scan_network — not connected")
             self.status_signal.emit(False, "Not connected — cannot scan")
             return
 
+        self._scan_in_progress = True
         self._log("[MCP] → scan_network starting")
         self.status_signal.emit(True, "Scanning network...")
         self.scan_started_signal.emit()
 
-        # Call MCP tool
-        result = self._run_sync(self._client._call_tool(
-            "scan_network", {"subnet": "", "resolve_names": True}
-        ))
-        result["method_name"] = "scan_network"
+        try:
+            # Call MCP tool
+            result = self._run_sync(self._client._call_tool(
+                "scan_network", {"subnet": "", "resolve_names": True}
+            ))
+            result["method_name"] = "scan_network"
 
-        ok = result.get("success", False)
-        if not ok:
-            err = result.get("error", "unknown error")
-            self._log(f"[MCP] ← scan_network failed: {err}")
-            self.status_signal.emit(False, f"Scan failed: {err}")
-            self.result_signal.emit(result)  # still emit for legacy handlers
-            return
+            ok = result.get("success", False)
+            if not ok:
+                err = result.get("error", "unknown error")
+                self._log(f"[MCP] ← scan_network failed: {err}")
+                self.status_signal.emit(False, f"Scan failed: {err}")
+                self.result_signal.emit(result)
+                return
 
-        self._log(f"[MCP] ← scan_network OK — parsing {len(result.get('devices', []))} devices")
+            self._log(f"[MCP] ← scan_network OK — parsing {len(result.get('devices', []))} devices")
 
-        devices = result.get("devices", [])
-        total = len(devices)
+            devices = result.get("devices", [])
+            total = len(devices)
 
-        # Emit per-device signals (Qt event loop processes each between iterations)
-        for row, dev in enumerate(devices):
-            self.device_signal.emit(row, dev)
+            # Emit per-device signals (Qt event loop processes each between iterations)
+            for row, dev in enumerate(devices):
+                self.device_signal.emit(row, dev)
 
-        # Signal completion
-        self.scan_complete_signal.emit(total)
-        self.status_signal.emit(True, f"Scan complete: {total} devices")
-        self._log(f"[MCP] ✓ scan_network complete: {total} devices")
+            # Signal completion
+            self.scan_complete_signal.emit(total)
+            self.status_signal.emit(True, f"Scan complete: {total} devices")
+            self._log(f"[MCP] ✓ scan_network complete: {total} devices")
 
-        # Also emit legacy result_signal for backwards compatibility
-        self.result_signal.emit(result)
+            # Also emit legacy result_signal for backwards compatibility
+            self.result_signal.emit(result)
+        finally:
+            # Always reset the guard — even if _run_sync or signal emission raises
+            self._scan_in_progress = False
 
     @Slot()
     def get_scanner_status(self):
